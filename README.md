@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/cover.png" alt="Flipper Agent — AI-driven hardware security testing, for authorized use" width="100%">
+<img src="docs/assets/cover-2.png" alt="Flipper Agent — AI-driven hardware security testing, for authorized use" width="100%">
 
 # Flipper Agent
 
