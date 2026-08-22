@@ -20,6 +20,7 @@ The runtime must not advertise an implemented capability as `hardware_verified` 
 |---|---|---|---|---|
 | `infrared.observe` | `OBSERVE` | implemented | no | pending |
 | `wireless.subghz.observe` | `OBSERVE` | implemented | no | pending |
+| `wireless.nfc.identify` | `INTERACT` | implemented | no | pending |
 
 ## `infrared.observe`
 
@@ -59,6 +60,30 @@ The normalized output preserves the tuned frequency, radio index, decoded protoc
 
 If no decodable packet arrives, the result is `INCONCLUSIVE`.
 
+## `wireless.nfc.identify`
+
+Purpose: identify NFC protocol families without reading application data, writing a tag, or emulating one.
+
+The implementation enters the stock NFC CLI and invokes only:
+
+```text
+scanner -t
+```
+
+The tree output is normalized into protocol hierarchies such as:
+
+```text
+ISO14443-3A -> Mifare Ultralight
+```
+
+Inputs:
+
+- `duration_seconds`: `0.01` to `30.0` seconds.
+
+This capability is classified as `INTERACT`, not `OBSERVE`. NFC identification requires the reader field and protocol exchange to discover nearby tags, so calling it passive would be misleading even though the operation is non-destructive.
+
+If no NFC protocol is identified during the bounded scan window, the result is `INCONCLUSIVE`.
+
 ## Verification gate
 
 `FlipperAdapter` accepts an explicit set of verified capability IDs. The default set is empty.
@@ -77,6 +102,8 @@ The current capabilities do not implement:
 
 - infrared transmit or replay;
 - Sub-GHz transmit or replay;
+- NFC tag data extraction beyond protocol identification;
+- NFC writes, cloning, or emulation;
 - brute force;
 - universal remote actions;
 - external CC1101 selection;
