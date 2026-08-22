@@ -19,42 +19,45 @@ The runtime must not advertise an implemented capability as `hardware_verified` 
 | Capability | Action class | Code state | Agent-visible by default | Hardware evidence |
 |---|---|---|---|---|
 | `infrared.observe` | `OBSERVE` | implemented | no | pending |
+| `wireless.subghz.observe` | `OBSERVE` | implemented | no | pending |
 
 ## `infrared.observe`
 
 Purpose: receive and normalize infrared signals without transmitting.
 
-The implementation uses the stock Flipper CLI receive command:
-
-```text
-ir rx
-```
-
-Optional raw observation uses:
-
-```text
-ir rx raw
-```
-
-The runtime starts a bounded capture window and sends Ctrl+C (ETX) to stop the stock receive loop. It does not call the infrared transmit command.
+The implementation uses `ir rx` or `ir rx raw`. The runtime starts a bounded capture window and sends Ctrl+C (ETX) to stop the stock receive loop.
 
 Inputs:
 
 - `duration_seconds`: `0.01` to `30.0` seconds;
 - `raw`: boolean, default `false`.
 
-Normalized decoded observation:
+If no signal arrives, the result is `INCONCLUSIVE`.
 
-```json
-{
-  "protocol": "NEC",
-  "address": "0x00FF",
-  "command": "0x20DF",
-  "repeat": false
-}
+## `wireless.subghz.observe`
+
+Purpose: receive and normalize decodable Sub-GHz packets without transmitting.
+
+The implementation uses the stock receive command with the internal CC1101 radio only:
+
+```text
+subghz rx <frequency_hz> 0
 ```
 
-If no signal arrives during the capture window, the result is `INCONCLUSIVE`. The runtime must not convert absence of a signal into a security finding.
+The runtime accepts frequencies inside the receive ranges defined by the current stock firmware:
+
+- `299999755` to `348000000` Hz;
+- `386999938` to `464000000` Hz;
+- `778999847` to `928000000` Hz.
+
+Inputs:
+
+- `duration_seconds`: `0.01` to `30.0` seconds;
+- `frequency_hz`: integer, default `433920000`.
+
+The normalized output preserves the tuned frequency, radio index, decoded protocol name, and protocol fields reported by the stock Flipper decoder.
+
+If no decodable packet arrives, the result is `INCONCLUSIVE`.
 
 ## Verification gate
 
@@ -66,14 +69,15 @@ This means:
 - development code can exist before hardware verification;
 - normal capability discovery cannot expose an unverified operation by accident.
 
-The next hardware step is to run a controlled infrared observation test with a real Flipper and known IR source. After the evidence is recorded, `infrared.observe` can be promoted to `hardware_verified` in the runtime configuration path.
+Each capability needs a controlled real-device verification before it can be promoted to `hardware_verified` in the runtime configuration path.
 
 ## Out of scope
 
-This capability does not implement:
+The current capabilities do not implement:
 
-- infrared transmit;
-- replay;
+- infrared transmit or replay;
+- Sub-GHz transmit or replay;
 - brute force;
 - universal remote actions;
+- external CC1101 selection;
 - arbitrary CLI command execution.
