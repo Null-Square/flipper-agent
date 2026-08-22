@@ -34,7 +34,13 @@ The production path is:
 real verification procedure
         |
         v
-raw verification artifact
+actual typed adapter execution
+        |
+        v
+expected lab result comparison
+        |
+        v
+raw + normalized verification artifact
         |
         +--> SHA-256
         |
@@ -58,6 +64,8 @@ capability becomes discoverable
 
 If any required condition fails, the capability remains unavailable.
 
+The verifier does not have a generic `mark_verified(capability_id)` path. Each supported capability has a named procedure that executes the same typed handler later used by the assessment runtime.
+
 ## Verification record
 
 A record contains:
@@ -75,6 +83,8 @@ A record contains:
 - content-addressed evidence reference;
 - evidence SHA-256;
 - individual check results.
+
+The evidence artifact also captures the procedure parameters, instrument identity, typed action class, normalized result, raw adapter response, limitations, and every pass/fail check.
 
 The store copies the supplied evidence into a content-addressed artifact path. Records are append-only from the application's point of view.
 
@@ -105,6 +115,87 @@ Every time capabilities are resolved, the store hashes the retained evidence art
 Malformed records, unsupported schema versions, invalid boolean types, invalid hashes, and artifact references outside the verification directory are ignored fail-closed.
 
 This protects against accidental/stale/corrupt local verification state. It is not yet a cryptographic identity/signature system against a privileged local attacker. Signed verification manifests and centralized attestation can be added later if Null-AI needs distributed trust.
+
+## Controlled Flipper procedures
+
+All procedures require a real, known lab condition. The operator must explicitly confirm that condition before execution.
+
+### Infrared receive
+
+Use a lab-owned IR source that emits a known protocol:
+
+```bash
+hardware-pentest flipper-verify \
+  --port <PORT> \
+  infrared \
+  --expected-protocol NEC \
+  --confirm-known-source
+```
+
+The procedure passes only when `infrared.observe` executes successfully and the normalized decoded observations contain the expected protocol.
+
+### Sub-GHz receive
+
+Use a lab-owned source at an allowed receive frequency:
+
+```bash
+hardware-pentest flipper-verify \
+  --port <PORT> \
+  subghz \
+  --frequency-hz 433920000 \
+  --expected-protocol Princeton \
+  --confirm-known-source
+```
+
+This procedure is receive-only and continues to use the internal CC1101 path. It does not transmit or replay anything.
+
+### NFC identification
+
+Place a known lab-owned NFC tag in the reader field:
+
+```bash
+hardware-pentest flipper-verify \
+  --port <PORT> \
+  nfc \
+  --expected-protocol "Mifare Ultralight" \
+  --confirm-known-source
+```
+
+The procedure invokes only the bounded protocol-identification capability. It does not read application data, write, clone, emulate, or attack keys.
+
+### GPIO inspection
+
+GPIO verification requires a prepared non-debug input pin and a known digital level. Before connecting the target or level source, the operator must confirm:
+
+- the selected pin is already configured as input;
+- common ground is connected;
+- the applied voltage is safe for Flipper Zero;
+- the expected level is intentionally applied.
+
+Then run:
+
+```bash
+hardware-pentest flipper-verify \
+  --port <PORT> \
+  gpio \
+  --pin PA7 \
+  --expected-level 1 \
+  --confirm-setup
+```
+
+The assessment/verifier path issues only `gpio read <PIN>`. It never calls `gpio mode`, `gpio set`, or any output-driving operation.
+
+## Result semantics
+
+A verification attempt always records what actually happened after execution begins.
+
+- expected observation found: passing record;
+- capability executes but the expected observation does not match: failed record;
+- a later failed record for the same exact device/software state revokes an earlier pass.
+
+A missing physical confirmation is rejected before hardware execution and does not create a synthetic record.
+
+The CLI exits non-zero when an executed verification procedure produces a failed record.
 
 ## Test/development override
 
@@ -144,14 +235,8 @@ Inspect verification records and current artifact integrity:
 hardware-pentest verification-records
 ```
 
-There is intentionally no generic CLI command that lets an operator manually mark an arbitrary capability as passed. A capability-specific verification procedure must produce the evidence and record.
+There is intentionally no generic CLI command that lets an operator manually mark an arbitrary capability as passed. A capability-specific verification procedure must execute and produce the evidence and record.
 
-## Next procedures
+## Current release claim
 
-The first capability-specific real-hardware procedures should cover:
-
-- `infrared.observe` with a known IR source;
-- `wireless.subghz.observe` with a lab-owned known transmitter at an allowed receive frequency;
-- `wireless.nfc.identify` with a known lab-owned NFC tag.
-
-Each procedure should test both the successful observation path and the relevant safe failure/inconclusive path before creating a passing verification record.
+The four v0.1 Flipper capability families are implemented in code, but release documentation must continue to describe them as hardware-unverified until these procedures have been run successfully on a real supported Flipper Zero and the resulting evidence has been reviewed.
