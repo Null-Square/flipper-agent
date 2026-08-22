@@ -49,6 +49,14 @@ def runtime(tmp_path, adapter: SimulatedAdapter | None = None):
     return registry, state_store, runner
 
 
+def single_test_case(capability_id: str) -> tuple[TestCase, ...]:
+    return tuple(
+        item
+        for item in flipper_mvp_test_catalog()
+        if item.required_capability == capability_id
+    )
+
+
 def test_multi_step_assessment_pauses_for_gpio_and_resumes_from_disk(tmp_path) -> None:
     registry, store, runner = runtime(tmp_path)
     state = AssessmentPlanner().plan(
@@ -107,14 +115,11 @@ def test_inconclusive_result_remains_inconclusive_and_is_evidence_linked(tmp_pat
         }
     )
     registry, store, runner = runtime(tmp_path, adapter)
-    test_case = tuple(
-        item for item in flipper_mvp_test_catalog() if item.required_capability == "infrared.observe"
-    )
     state = AssessmentPlanner().plan(
         engagement=engagement(),
         target=target(),
         registry=registry,
-        test_cases=test_case,
+        test_cases=single_test_case("infrared.observe"),
         assessment_id="assessment-inconclusive",
     )
     store.save(state)
@@ -139,14 +144,11 @@ def test_blocked_execution_remains_blocked_and_does_not_create_observation(tmp_p
         }
     )
     registry, store, runner = runtime(tmp_path, adapter)
-    test_case = tuple(
-        item for item in flipper_mvp_test_catalog() if item.required_capability == "infrared.observe"
-    )
     state = AssessmentPlanner().plan(
         engagement=engagement(),
         target=target(),
         registry=registry,
-        test_cases=test_case,
+        test_cases=single_test_case("infrared.observe"),
         assessment_id="assessment-blocked-execution",
     )
     store.save(state)
@@ -206,14 +208,11 @@ def test_approval_gate_pauses_without_execution_then_resumes(tmp_path) -> None:
 def test_runtime_policy_denial_after_planning_does_not_create_evidence(tmp_path) -> None:
     registry, store, runner = runtime(tmp_path)
     planned_engagement = engagement()
-    test_case = tuple(
-        item for item in flipper_mvp_test_catalog() if item.required_capability == "infrared.observe"
-    )
     state = AssessmentPlanner().plan(
         engagement=planned_engagement,
         target=target(),
         registry=registry,
-        test_cases=test_case,
+        test_cases=single_test_case("infrared.observe"),
         assessment_id="assessment-policy-change",
     )
     store.save(state)
