@@ -3,8 +3,9 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, datetime
 
-import hardware_pentest.adapters.composite.flipper_marauder as composite_module
 import pytest
+
+import hardware_pentest.adapters.composite.flipper_marauder as composite_module
 from hardware_pentest.adapters.composite import FlipperMarauderAdapter
 from hardware_pentest.adapters.flipper.apps import MARAUDER_APP
 from hardware_pentest.adapters.flipper.apps.models import FlipperAppInstallation
