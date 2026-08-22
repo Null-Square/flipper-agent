@@ -1,6 +1,7 @@
 import pytest
 
 from hardware_pentest.adapters.flipper.adapter import (
+    GPIO_INSPECT,
     INFRARED_OBSERVE,
     NFC_IDENTIFY,
     SUBGHZ_OBSERVE,
@@ -13,7 +14,7 @@ def test_default_handler_registry_exposes_implemented_ids_without_probing() -> N
     adapter = FlipperAdapter("/dev/not-opened")
 
     assert adapter.implemented_capabilities == frozenset(
-        {INFRARED_OBSERVE, SUBGHZ_OBSERVE, NFC_IDENTIFY}
+        {GPIO_INSPECT, INFRARED_OBSERVE, SUBGHZ_OBSERVE, NFC_IDENTIFY}
     )
     assert adapter.capabilities() == []
 
