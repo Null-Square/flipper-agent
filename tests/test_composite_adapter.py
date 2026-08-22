@@ -22,7 +22,6 @@ from hardware_pentest.core.models import (
 from hardware_pentest.preflight import PreflightReport
 from hardware_pentest.preflight.store import LocalPreflightStore
 
-
 FLIPPER_IR = "infrared.observe"
 MARAUDER_WIFI = "wireless.wifi.beacons.observe"
 
