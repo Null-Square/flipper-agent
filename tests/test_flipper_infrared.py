@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from hardware_pentest.adapters.flipper.adapter import FlipperAdapter, INFRARED_OBSERVE
+from hardware_pentest.adapters.flipper.adapter import INFRARED_OBSERVE, FlipperAdapter
 from hardware_pentest.adapters.flipper.infrared import parse_infrared_capture
 from hardware_pentest.adapters.flipper.transport import FlipperSerialTransport
 from hardware_pentest.core.models import Action, ActionClass, ExecutionStatus
