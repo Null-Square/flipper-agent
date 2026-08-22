@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -18,7 +20,7 @@ from hardware_pentest.service.execution import HarnessAssessmentExecutor, Instru
 from hardware_pentest.service.gates import GateKind, LocalGateStore
 
 
-def _roots(tmp_path) -> dict[str, object]:
+def _roots(tmp_path: Path) -> dict[str, Path]:
     return {
         "assessment_root": tmp_path / "assessments",
         "engagement_root": tmp_path / "engagements",
@@ -29,7 +31,7 @@ def _roots(tmp_path) -> dict[str, object]:
     }
 
 
-def _persist_assessment(tmp_path, *, requires_approval: bool) -> None:
+def _persist_assessment(tmp_path: Path, *, requires_approval: bool) -> None:
     roots = _roots(tmp_path)
     now = datetime.now(UTC)
     target = Target(target_id="camera-1", description="Authorized lab camera")
@@ -73,7 +75,7 @@ def _persist_assessment(tmp_path, *, requires_approval: bool) -> None:
     LocalAssessmentStore(roots["assessment_root"]).save(state)
 
 
-def test_outer_agent_cannot_self_approve_gated_step(tmp_path) -> None:
+def test_outer_agent_cannot_self_approve_gated_step(tmp_path: Path) -> None:
     roots = _roots(tmp_path)
     _persist_assessment(tmp_path, requires_approval=True)
     executor = HarnessAssessmentExecutor(**roots)
@@ -92,7 +94,7 @@ def test_outer_agent_cannot_self_approve_gated_step(tmp_path) -> None:
         )
 
 
-def test_operator_gate_is_consumed_then_step_executes_with_evidence(tmp_path) -> None:
+def test_operator_gate_is_consumed_then_step_executes_with_evidence(tmp_path: Path) -> None:
     roots = _roots(tmp_path)
     _persist_assessment(tmp_path, requires_approval=True)
     executor = HarnessAssessmentExecutor(**roots)
@@ -110,7 +112,7 @@ def test_operator_gate_is_consumed_then_step_executes_with_evidence(tmp_path) ->
     assert result["paused"] is False
     assert result["execution_status"] == "success"
     assert result["assessment_status"] == "completed"
-    assert result["evidence_id"].startswith("ev-")
+    assert str(result["evidence_id"]).startswith("ev-")
     evidence = LocalEvidenceStore(roots["evidence_root"]).records("engagement-1")
     assert len(evidence) == 1
     assert evidence[0].capability_id == "infrared.observe"
@@ -121,7 +123,7 @@ def test_operator_gate_is_consumed_then_step_executes_with_evidence(tmp_path) ->
     ) is None
 
 
-def test_execution_fails_closed_without_persisted_engagement(tmp_path) -> None:
+def test_execution_fails_closed_without_persisted_engagement(tmp_path: Path) -> None:
     roots = _roots(tmp_path)
     _persist_assessment(tmp_path, requires_approval=False)
     engagement_path = roots["engagement_root"] / "engagement-1.json"
@@ -131,3 +133,32 @@ def test_execution_fails_closed_without_persisted_engagement(tmp_path) -> None:
 
     with pytest.raises(ValueError, match="Stored engagement does not exist"):
         executor.execute_next("assessment-1", instrument=InstrumentSelection())
+
+
+def test_recovery_requires_separate_operator_grant(tmp_path: Path) -> None:
+    roots = _roots(tmp_path)
+    _persist_assessment(tmp_path, requires_approval=False)
+    store = LocalAssessmentStore(roots["assessment_root"])
+    state = store.load("assessment-1")
+    running_step = replace(state.steps[0], status=StepStatus.RUNNING, reason="Execution started")
+    store.save(
+        replace(
+            state,
+            status=AssessmentStatus.RUNNING,
+            steps=(running_step,),
+        )
+    )
+    executor = HarnessAssessmentExecutor(**roots)
+
+    with pytest.raises(PermissionError, match="Operator recovery grant"):
+        executor.recover_interrupted("assessment-1")
+
+    LocalGateStore(roots["gate_root"]).grant(
+        assessment_id="assessment-1",
+        step_id="assessment-1:ir",
+        kind=GateKind.RECOVERY,
+    )
+    recovered = executor.recover_interrupted("assessment-1")
+
+    assert recovered["status"] in {"interrupted", "completed"}
+    assert str(recovered["operator_gate_grant_id"]).startswith("gate-")
