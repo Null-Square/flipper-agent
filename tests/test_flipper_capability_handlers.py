@@ -29,9 +29,18 @@ def test_duplicate_capability_handlers_are_rejected() -> None:
         )
 
 
-def test_unknown_capability_cannot_be_marked_verified() -> None:
+def test_verification_override_requires_explicit_opt_in() -> None:
+    with pytest.raises(ValueError, match="test/development override"):
+        FlipperAdapter(
+            "/dev/not-opened",
+            verified_capabilities={INFRARED_OBSERVE},
+        )
+
+
+def test_unknown_capability_cannot_be_marked_verified_even_with_override() -> None:
     with pytest.raises(ValueError, match="Cannot verify unimplemented"):
         FlipperAdapter(
             "/dev/not-opened",
             verified_capabilities={"wireless.unknown.identify"},
+            allow_verification_override=True,
         )
