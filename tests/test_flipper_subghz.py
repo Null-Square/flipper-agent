@@ -72,6 +72,15 @@ def _factory(*, emit_packet: bool = True):
     return factory
 
 
+def _verified_adapter(*, emit_packet: bool = True) -> FlipperAdapter:
+    return FlipperAdapter(
+        "/dev/fake",
+        serial_factory=_factory(emit_packet=emit_packet),
+        verified_capabilities={SUBGHZ_OBSERVE},
+        allow_verification_override=True,
+    )
+
+
 def test_subghz_frequency_ranges_match_supported_receive_bands() -> None:
     assert is_valid_subghz_rx_frequency(433_920_000) is True
     assert is_valid_subghz_rx_frequency(315_000_000) is True
@@ -127,11 +136,7 @@ def test_unverified_subghz_capability_is_not_advertised() -> None:
 
 
 def test_verified_subghz_capability_executes_and_normalizes_packet() -> None:
-    adapter = FlipperAdapter(
-        "/dev/fake",
-        serial_factory=_factory(),
-        verified_capabilities={SUBGHZ_OBSERVE},
-    )
+    adapter = _verified_adapter()
     action = Action(
         action_id="rf-2",
         capability_id=SUBGHZ_OBSERVE,
@@ -151,11 +156,7 @@ def test_verified_subghz_capability_executes_and_normalizes_packet() -> None:
 
 
 def test_subghz_capability_is_inconclusive_when_no_packet_arrives() -> None:
-    adapter = FlipperAdapter(
-        "/dev/fake",
-        serial_factory=_factory(emit_packet=False),
-        verified_capabilities={SUBGHZ_OBSERVE},
-    )
+    adapter = _verified_adapter(emit_packet=False)
     action = Action(
         action_id="rf-3",
         capability_id=SUBGHZ_OBSERVE,
@@ -171,11 +172,7 @@ def test_subghz_capability_is_inconclusive_when_no_packet_arrives() -> None:
 
 
 def test_subghz_validation_blocks_out_of_band_frequency() -> None:
-    adapter = FlipperAdapter(
-        "/dev/fake",
-        serial_factory=_factory(),
-        verified_capabilities={SUBGHZ_OBSERVE},
-    )
+    adapter = _verified_adapter()
     action = Action(
         action_id="rf-4",
         capability_id=SUBGHZ_OBSERVE,
