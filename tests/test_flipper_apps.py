@@ -14,13 +14,14 @@ class AppFakeSerial:
         self,
         *,
         installed: bool = True,
+        running_app_name: str | None = None,
         instances: list[AppFakeSerial] | None = None,
         **kwargs: Any,
     ) -> None:
         self.installed = installed
         self.kwargs = kwargs
         self.is_open = True
-        self.running = False
+        self.running_app_name = running_app_name
         self.writes: list[bytes] = []
         self._buffer = bytearray(b">: ")
         if instances is not None:
@@ -57,18 +58,20 @@ class AppFakeSerial:
         elif command == f"storage md5 {MARAUDER_APP.path}":
             self._respond(command, "0123456789abcdef0123456789ABCDEF")
         elif command == f"loader open {MARAUDER_APP.path}":
-            self.running = True
-            self._respond(command, "Application started")
+            self.running_app_name = MARAUDER_APP.display_name
+            self._respond(command, "")
         elif command == "loader info":
             body = (
-                "Application: ESP32 WiFi Marauder"
-                if self.running
+                f'Application "{self.running_app_name}" is running'
+                if self.running_app_name
                 else "No application is running"
             )
             self._respond(command, body)
         elif command == "loader close":
-            self.running = False
-            self._respond(command, "Application stopped")
+            old_name = self.running_app_name
+            self.running_app_name = None
+            body = f'Application "{old_name}" was closed' if old_name else "No application is running"
+            self._respond(command, body)
         elif command.startswith("input send "):
             self._respond(command, "")
         elif data == b"\r":
@@ -92,10 +95,16 @@ class AppFakeSerial:
 def factory(
     *,
     installed: bool = True,
+    running_app_name: str | None = None,
     instances: list[AppFakeSerial] | None = None,
 ):
     def build(**kwargs: Any) -> AppFakeSerial:
-        return AppFakeSerial(installed=installed, instances=instances, **kwargs)
+        return AppFakeSerial(
+            installed=installed,
+            running_app_name=running_app_name,
+            instances=instances,
+            **kwargs,
+        )
 
     return build
 
@@ -129,7 +138,7 @@ def test_missing_fap_does_not_request_md5() -> None:
     assert not any(item.startswith(b"storage md5") for item in writes)
 
 
-def test_launch_uses_only_catalogued_exact_fap_path() -> None:
+def test_launch_uses_exact_catalogued_fap_and_verifies_running_app_name() -> None:
     instances: list[AppFakeSerial] = []
     manager = FlipperAppManager(
         "/dev/fake",
@@ -139,6 +148,7 @@ def test_launch_uses_only_catalogued_exact_fap_path() -> None:
     state = manager.launch(MARAUDER_APP.app_id)
 
     assert state.running is True
+    assert state.application_name == MARAUDER_APP.display_name
     writes = [item for instance in instances for item in instance.writes]
     assert f"loader open {MARAUDER_APP.path}\r".encode() in writes
 
@@ -173,27 +183,21 @@ def test_catalogue_path_cannot_escape_ext_apps() -> None:
         manager.discover()
 
 
-def test_short_input_is_bounded_to_flipper_keys_and_exact_event_sequence() -> None:
+def test_short_input_is_bounded_to_expected_running_app_and_event_sequence() -> None:
     instances: list[AppFakeSerial] = []
-    serial_factory = factory(instances=instances)
-    manager = FlipperAppManager("/dev/fake", serial_factory=serial_factory)
-    manager.launch(MARAUDER_APP.app_id)
+    manager = FlipperAppManager(
+        "/dev/fake",
+        serial_factory=factory(
+            running_app_name=MARAUDER_APP.display_name,
+            instances=instances,
+        ),
+    )
 
-    # Each manager operation opens a fresh fake connection, so model a running app for the input
-    # operation as the loader would report it on the real device.
-    input_instance_holder: list[AppFakeSerial] = []
-
-    def running_factory(**kwargs: Any) -> AppFakeSerial:
-        instance = AppFakeSerial(instances=input_instance_holder, **kwargs)
-        instance.running = True
-        return instance
-
-    running_manager = FlipperAppManager("/dev/fake", serial_factory=running_factory)
-    state = running_manager.send_short_input(MARAUDER_APP.app_id, "ok")
+    state = manager.send_short_input(MARAUDER_APP.app_id, "ok")
 
     assert state.running is True
-    writes = input_instance_holder[0].writes
-    events = [item for item in writes if item.startswith(b"input send")]
+    assert state.application_name == MARAUDER_APP.display_name
+    events = [item for item in instances[0].writes if item.startswith(b"input send")]
     assert events == [
         b"input send ok press\r",
         b"input send ok short\r",
@@ -201,15 +205,41 @@ def test_short_input_is_bounded_to_flipper_keys_and_exact_event_sequence() -> No
     ]
 
 
+def test_input_refuses_to_control_a_different_running_app() -> None:
+    instances: list[AppFakeSerial] = []
+    manager = FlipperAppManager(
+        "/dev/fake",
+        serial_factory=factory(running_app_name="Sub-GHz", instances=instances),
+    )
+
+    with pytest.raises(FlipperProtocolError, match="Expected running app"):
+        manager.send_short_input(MARAUDER_APP.app_id, "ok")
+
+    assert not any(item.startswith(b"input send") for item in instances[0].writes)
+
+
+def test_close_refuses_to_close_a_different_running_app() -> None:
+    instances: list[AppFakeSerial] = []
+    manager = FlipperAppManager(
+        "/dev/fake",
+        serial_factory=factory(running_app_name="NFC", instances=instances),
+    )
+
+    with pytest.raises(FlipperProtocolError, match="Expected running app"):
+        manager.close(MARAUDER_APP.app_id)
+
+    assert b"loader close\r" not in instances[0].writes
+
+
 def test_invalid_input_key_is_rejected_without_injection() -> None:
     instances: list[AppFakeSerial] = []
-
-    def running_factory(**kwargs: Any) -> AppFakeSerial:
-        instance = AppFakeSerial(instances=instances, **kwargs)
-        instance.running = True
-        return instance
-
-    manager = FlipperAppManager("/dev/fake", serial_factory=running_factory)
+    manager = FlipperAppManager(
+        "/dev/fake",
+        serial_factory=factory(
+            running_app_name=MARAUDER_APP.display_name,
+            instances=instances,
+        ),
+    )
 
     with pytest.raises(FlipperProtocolError, match="Input key must be one of"):
         manager.send_short_input(MARAUDER_APP.app_id, "shell")
