@@ -5,7 +5,11 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from hardware_pentest.adapters.flipper.adapter import ADAPTER_VERSION, INFRARED_OBSERVE, FlipperAdapter
+from hardware_pentest.adapters.flipper.adapter import (
+    ADAPTER_VERSION,
+    INFRARED_OBSERVE,
+    FlipperAdapter,
+)
 from hardware_pentest.core.models import InstrumentIdentity
 from hardware_pentest.verification import LocalVerificationStore, VerificationCheckResult
 
@@ -64,7 +68,12 @@ def test_firmware_or_adapter_state_must_match_exactly(tmp_path) -> None:
     store = LocalVerificationStore(tmp_path / "verification")
     record_pass(store, tmp_path)
 
-    assert store.verified_capabilities(identity(firmware="1.4.4"), {INFRARED_OBSERVE}) == frozenset()
+    verified = store.verified_capabilities(
+        identity(firmware="1.4.4"),
+        {INFRARED_OBSERVE},
+    )
+    assert verified == frozenset()
+
     different_adapter = InstrumentIdentity(
         **{
             **identity().__dict__,
