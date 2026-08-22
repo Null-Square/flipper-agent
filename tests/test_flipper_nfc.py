@@ -98,6 +98,15 @@ def _factory(
     return factory
 
 
+def _verified_adapter() -> FlipperAdapter:
+    return FlipperAdapter(
+        "/dev/fake",
+        serial_factory=_factory(),
+        verified_capabilities={NFC_IDENTIFY},
+        allow_verification_override=True,
+    )
+
+
 def test_parse_nfc_protocol_tree() -> None:
     scan = parse_nfc_protocol_scan(
         "Protocols detected:\r\n"
@@ -160,11 +169,7 @@ def test_nfc_identify_is_interact_and_remains_gated_until_verified() -> None:
 
 
 def test_verified_nfc_identify_executes_and_normalizes_protocols() -> None:
-    adapter = FlipperAdapter(
-        "/dev/fake",
-        serial_factory=_factory(),
-        verified_capabilities={NFC_IDENTIFY},
-    )
+    adapter = _verified_adapter()
     action = Action(
         action_id="nfc-2",
         capability_id=NFC_IDENTIFY,
@@ -183,11 +188,7 @@ def test_verified_nfc_identify_executes_and_normalizes_protocols() -> None:
 
 
 def test_nfc_identify_rejects_observe_action_class() -> None:
-    adapter = FlipperAdapter(
-        "/dev/fake",
-        serial_factory=_factory(),
-        verified_capabilities={NFC_IDENTIFY},
-    )
+    adapter = _verified_adapter()
     action = Action(
         action_id="nfc-3",
         capability_id=NFC_IDENTIFY,
