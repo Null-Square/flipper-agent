@@ -63,16 +63,7 @@ class AdapterFakeSerial:
             )
         elif command in {"clearlist -a", "clearlist -c"}:
             self._respond(command, "0 selected")
-        elif command in {
-            "scanall",
-            "sniffraw",
-            "sniffbeacon",
-            "sniffprobe",
-            "sniffdeauth",
-            "sniffpmkid",
-            "sniffsae",
-            "packetcount",
-        } or command.startswith("sniffpmkid -c "):
+        elif _is_observation_command(command):
             self._respond(command, f"Starting {command}. Stop with stopscan")
             lines = self.stream_lines.get(command, ())
             if lines:
@@ -95,6 +86,22 @@ class AdapterFakeSerial:
 
     def reset_input_buffer(self) -> None:
         self._buffer.clear()
+
+
+def _is_observation_command(command: str) -> bool:
+    tokens = command.split()
+    if not tokens:
+        return False
+    return tokens[0] in {
+        "scanall",
+        "sniffraw",
+        "sniffbeacon",
+        "sniffprobe",
+        "sniffdeauth",
+        "sniffpmkid",
+        "sniffsae",
+        "packetcount",
+    } and "-serial" in tokens
 
 
 def factory(
@@ -207,10 +214,11 @@ def test_environment_scan_returns_ap_and_station_observation_counts() -> None:
 
 def test_passive_deauth_observation_records_stream_without_transmitting() -> None:
     instances: list[AdapterFakeSerial] = []
+    command = "sniffdeauth -serial"
     adapter = MarauderAdapter(
         "/dev/fake",
         serial_factory=factory(
-            stream_lines={"sniffdeauth": ("DEAUTH AA:BB:CC:DD:EE:FF",)},
+            stream_lines={command: ("DEAUTH AA:BB:CC:DD:EE:FF",)},
             instances=instances,
         ),
         verified_capabilities={MARAUDER_WIFI_DEAUTH_FRAMES_OBSERVE},
@@ -223,15 +231,17 @@ def test_passive_deauth_observation_records_stream_without_transmitting() -> Non
     assert result.normalized["observed_line_count"] == 1
     assert "only observes deauthentication" in " ".join(result.limitations)
     writes = [write for instance in instances for write in instance.writes]
+    assert b"sniffdeauth -serial\n" in writes
     assert not any(b"attack" in write for write in writes)
 
 
 def test_pmkid_observation_accepts_bounded_channel_and_never_uses_dash_d() -> None:
     instances: list[AdapterFakeSerial] = []
+    command = "sniffpmkid -c 6 -serial"
     adapter = MarauderAdapter(
         "/dev/fake",
         serial_factory=factory(
-            stream_lines={"sniffpmkid -c 6": ("PMKID material",)},
+            stream_lines={command: ("PMKID material",)},
             instances=instances,
         ),
         verified_capabilities={MARAUDER_WIFI_PMKID_OBSERVE},
@@ -247,7 +257,7 @@ def test_pmkid_observation_accepts_bounded_channel_and_never_uses_dash_d() -> No
 
     assert result.status is ExecutionStatus.SUCCESS
     writes = [write for instance in instances for write in instance.writes]
-    assert b"sniffpmkid -c 6\n" in writes
+    assert b"sniffpmkid -c 6 -serial\n" in writes
     assert not any(b" -d" in write for write in writes)
 
 
@@ -279,23 +289,20 @@ def test_non_observe_action_class_is_rejected() -> None:
     assert "must use OBSERVE" in (result.error or "")
 
 
-def test_unknown_inputs_are_rejected_instead_of_ignored() -> None:
+def test_unknown_input_key_is_rejected_instead_of_ignored() -> None:
     adapter = MarauderAdapter(
         "/dev/fake",
         serial_factory=factory(),
-        verified_capabilities={MARAUDER_WIFI_DEAUTH_FRAMES_OBSERVE},
+        verified_capabilities={MARAUDER_WIFI_BEACONS_OBSERVE},
         allow_verification_override=True,
     )
 
     result = adapter.execute(
-        _action(
-            MARAUDER_WIFI_DEAUTH_FRAMES_OBSERVE,
-            inputs={"duration_seconds": 0.05, "attack": True},
-        )
+        _action(inputs={"duration_seconds": 0.05, "attack": True})
     )
 
     assert result.status is ExecutionStatus.BLOCKED
-    assert "Unsupported inputs" in (result.error or "")
+    assert "Unsupported input" in (result.error or "")
 
 
 def test_firmware_change_between_probe_and_execution_fails_closed() -> None:
