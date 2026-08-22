@@ -27,6 +27,7 @@ dev = [
 [project.scripts]
 hardware-pentest = "hardware_pentest.interfaces.cli:main"
 hardware-pentest-preflight = "hardware_pentest.interfaces.preflight_cli:main"
+hardware-pentest-wifi-setup = "hardware_pentest.interfaces.wifi_setup_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/hardware_pentest"]
