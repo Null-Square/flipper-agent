@@ -1,0 +1,22 @@
+engagement_id: lab-smart-lock-001
+valid_from: "2026-08-22T00:00:00Z"
+valid_until: "2027-08-22T00:00:00Z"
+mode: non-destructive
+max_action_class: OBSERVE
+
+targets:
+  - target_id: smart-lock-a
+    description: Lab-owned smart lock used for authorized testing
+    metadata:
+      owner: NullSquare lab
+
+allowed_capabilities:
+  - "wireless.nfc.*"
+  - "wireless.rfid.*"
+  - "wireless.subghz.observe"
+  - "infrared.observe"
+
+denied_capabilities:
+  - "*.transmit"
+  - "*.emulate"
+  - "*.write"

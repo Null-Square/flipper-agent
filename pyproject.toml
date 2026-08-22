@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hardware-pentest-agent"
+version = "0.0.1"
+description = "Agent-native runtime for authorized hardware and embedded security testing"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+  { name = "NullSquare" }
+]
+dependencies = [
+  "PyYAML>=6.0.2",
+]
+
+[project.optional-dependencies]
+flipper = [
+  "pyserial>=3.5",
+]
+dev = [
+  "pytest>=8.3",
+  "ruff>=0.9",
+]
+
+[project.scripts]
+hardware-pentest = "hardware_pentest.interfaces.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hardware_pentest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
