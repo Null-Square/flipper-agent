@@ -17,8 +17,11 @@ from hardware_pentest.service import HardwarePentestService
 def _service(tmp_path) -> HardwarePentestService:
     return HardwarePentestService(
         assessment_root=tmp_path / "assessments",
+        engagement_root=tmp_path / "engagements",
+        evidence_root=tmp_path / "evidence",
         verification_root=tmp_path / "verification",
         preflight_root=tmp_path / "preflight",
+        gate_root=tmp_path / "gates",
     )
 
 
@@ -100,6 +103,8 @@ def test_service_info_makes_outer_harness_boundary_explicit(tmp_path) -> None:
 
     assert "llm_inference" in payload["outer_harness_owns"]
     assert "assessment_state" in payload["runtime_owns"]
+    assert "engagement_scope" in payload["runtime_owns"]
+    assert "operator_gate_grants" in payload["runtime_owns"]
     assert "policy_and_scope" in payload["runtime_owns"]
 
 
