@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from hardware_pentest.adapters.simulated import SimulatedAdapter
 from hardware_pentest.core.models import Action, ActionClass, Engagement, PolicyDecision
@@ -9,7 +9,7 @@ from hardware_pentest.runtime.executor import AssessmentExecutor
 
 
 def active_engagement() -> Engagement:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return Engagement(
         engagement_id="runtime-test",
         valid_from=now - timedelta(minutes=1),
