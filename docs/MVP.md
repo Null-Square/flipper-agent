@@ -30,15 +30,16 @@ Given an authorized target definition and a USB-connected Flipper Zero, the syst
 
 1. detect the Flipper;
 2. identify the device and transport state;
-3. register supported capabilities;
+3. register only hardware-verified capabilities;
 4. load an engagement scope;
 5. create or update a target model;
 6. generate a passive-first assessment plan;
-7. execute allowed observation steps;
-8. block disallowed steps below the LLM layer;
-9. preserve evidence and execution metadata;
-10. produce observations and an assessment report;
-11. mark unsupported or ambiguous results as inconclusive.
+7. execute allowed bounded steps;
+8. pause for required physical setup or approval;
+9. block disallowed steps below the LLM layer;
+10. preserve evidence and execution metadata;
+11. produce observations and an assessment report;
+12. mark unsupported or ambiguous results as inconclusive.
 
 ## Required vertical slice
 
@@ -76,19 +77,18 @@ The transport interface must remain replaceable.
 
 ## Required capability families
 
-The MVP must demonstrate at least four distinct families where the stock device, firmware, and selected control surface make the operation reliable.
+The initial v0.1 Flipper implementation targets four distinct hardware families:
 
-Candidate families:
-
-- `wireless.nfc.identify`;
-- `wireless.nfc.observe`;
-- `wireless.rfid.identify`;
-- `wireless.subghz.observe`;
 - `infrared.observe`;
-- `internal.gpio.inspect`;
-- `internal.uart.observe`.
+- `wireless.subghz.observe`;
+- `wireless.nfc.identify`;
+- `internal.gpio.inspect`.
 
-Do not claim a capability until the adapter proves it on real hardware.
+These four exercise different physical semantics: passive optical reception, passive RF reception, non-destructive NFC interaction, and human-prepared wired input inspection.
+
+Future Flipper families can include LF RFID and UART only after their data-handling and physical-safety contracts are modeled explicitly.
+
+Do not claim a capability until the adapter proves it on real hardware and the verification record remains valid for the current instrument, firmware, and adapter version.
 
 ## Capability maturity states
 
@@ -118,37 +118,37 @@ Each test case must declare:
 - result rules;
 - optional OWASP ISTG mapping.
 
-Initial examples can include:
+### Observe infrared activity
 
-### Identify an NFC interface
-
-Goal: determine whether an authorized target presents a detectable NFC technology and record the observation.
+Goal: record decoded or raw infrared observations from a lab-owned source.
 
 Default action class: `OBSERVE`.
 
-Output: technology/protocol metadata supported by the instrument plus raw evidence.
-
-### Identify an LF RFID interface
-
-Goal: determine whether an authorized target presents a detectable low-frequency RFID technology.
-
-Default action class: `OBSERVE`.
+The capability never transmits or replays an infrared signal.
 
 ### Observe Sub-GHz activity
 
-Goal: record scoped, passive observations in an approved frequency context.
+Goal: record scoped, receive-only observations at an approved frequency.
 
 Default action class: `OBSERVE`.
 
 The MVP does not replay, jam, brute-force, or transmit captured signals.
 
-### Inspect an approved wired/debug interface
+### Identify an NFC interface
 
-Goal: capture read-only observations from a physically connected interface after required safety checks.
+Goal: determine whether an authorized target presents a detectable NFC protocol family and record only the protocol hierarchy needed for identification.
 
-Default action class: `OBSERVE` or `INTERACT` depending on the operation.
+Default action class: `INTERACT`.
 
-Human confirmation is required when physical setup or voltage validation cannot be determined automatically.
+The reader must energize/query a tag to identify its protocol, so this is deliberately not mislabeled as passive observation. The MVP does not extract application data, write, clone, emulate, or attack keys.
+
+### Inspect a prepared GPIO input
+
+Goal: read one digital level from a supported non-debug external header pin after operator safety checks.
+
+Default action class: `OBSERVE` with `requires_human_action=true`.
+
+The operator must configure the chosen pin as input before connecting the target, confirm common ground, and confirm the signal voltage is safe. The assessment action itself invokes only `gpio read <PIN>` and never changes GPIO mode or drives an output.
 
 ## Engagement manifest
 
@@ -161,14 +161,15 @@ engagement_id: lab-smart-lock-001
 valid_from: 2026-08-22T00:00:00Z
 valid_until: 2026-08-23T00:00:00Z
 mode: non-destructive
-max_action_class: OBSERVE
+max_action_class: INTERACT
 targets:
   - target_id: smart-lock-a
     description: Lab-owned smart lock
 allowed_capabilities:
-  - wireless.nfc.*
-  - wireless.rfid.*
+  - infrared.observe
   - wireless.subghz.observe
+  - wireless.nfc.identify
+  - internal.gpio.inspect
 denied_capabilities:
   - "*.transmit"
   - "*.emulate"
@@ -188,8 +189,9 @@ The policy engine must check:
 - capability is allowed;
 - action class does not exceed the engagement limit;
 - required physical constraints are satisfied;
+- required human action is complete;
 - required approval exists;
-- required instrument capability is available.
+- required instrument capability is available and hardware-verified.
 
 The policy result must be one of:
 
@@ -198,7 +200,7 @@ The policy result must be one of:
 - `REQUIRE_HUMAN_ACTION`;
 - `DENY`.
 
-The LLM cannot override `DENY`.
+The LLM cannot override `DENY` or manufacture a hardware-verification result.
 
 ## Evidence requirements
 
@@ -228,6 +230,8 @@ limitations
 ```
 
 If an operation has no external artifact, preserve the raw response or canonical serialized result.
+
+Hardware-verification evidence is separate from assessment evidence. Capability discovery must resolve the verification store before a physical operation becomes available to the agent.
 
 ## Report requirements
 
@@ -285,6 +289,7 @@ The v0.1 MVP does not include:
 - arbitrary BadUSB payload execution;
 - arbitrary shell access;
 - arbitrary FAP execution;
+- GPIO output driving during an assessment action;
 - fault injection;
 - chip-off or invasive flash extraction;
 - firmware reverse engineering;
@@ -298,8 +303,11 @@ The MVP is complete only when all conditions are true:
 
 - [ ] A stock supported Flipper Zero connects over USB.
 - [ ] Device identity and health are discovered automatically.
-- [ ] The capability registry reports only capabilities the adapter can prove.
-- [ ] At least four capability families are hardware-verified.
+- [ ] The capability registry reports only capabilities backed by valid verification evidence.
+- [ ] `infrared.observe` is hardware-verified.
+- [ ] `wireless.subghz.observe` is hardware-verified.
+- [ ] `wireless.nfc.identify` is hardware-verified.
+- [ ] `internal.gpio.inspect` is hardware-verified.
 - [ ] An engagement manifest loads and validates.
 - [ ] An out-of-scope action is denied without LLM cooperation.
 - [ ] A planner cannot route to an unavailable capability.
@@ -315,15 +323,15 @@ The MVP is complete only when all conditions are true:
 
 ## Demo definition
 
-A release demo should use a lab-owned target with at least two observable interfaces.
+A release demo should use a lab-owned target with at least two relevant interfaces.
 
 The operator runs one command or agent request. The system:
 
 1. loads the engagement;
 2. detects the Flipper;
-3. shows available capabilities;
+3. resolves verified capabilities;
 4. proposes the assessment plan;
-5. executes allowed passive steps;
+5. executes allowed bounded steps;
 6. pauses for any required human step;
 7. stores evidence;
 8. generates a report.
