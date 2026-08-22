@@ -35,6 +35,10 @@ packages = ["src/hardware_pentest"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+  "contract: protocol/compatibility and fault-injection tests that require no physical hardware",
+  "hil: opt-in hardware-in-the-loop tests that may open configured local serial devices",
+]
 
 [tool.ruff]
 target-version = "py311"
