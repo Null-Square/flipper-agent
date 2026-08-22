@@ -15,7 +15,7 @@ _SENSITIVE_VALUES = (
         "<redacted-secret>",
     ),
     (
-        re.compile(r"(?im)^hardware[_\.]uid\s*:\s*(?P<value>[^\r\n]+)"),
+        re.compile(r"(?im)\bhardware[_\.]uid\s*:\s*(?P<value>[^\r\n]+)"),
         "<redacted-uid>",
     ),
 )
