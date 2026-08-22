@@ -66,6 +66,15 @@ def _factory(*, emit_signal: bool = True):
     return factory
 
 
+def _verified_adapter(*, emit_signal: bool = True) -> FlipperAdapter:
+    return FlipperAdapter(
+        "/dev/fake",
+        serial_factory=_factory(emit_signal=emit_signal),
+        verified_capabilities={INFRARED_OBSERVE},
+        allow_verification_override=True,
+    )
+
+
 def test_parse_decoded_infrared_signal_and_repeat() -> None:
     capture = parse_infrared_capture(
         "Receiving  INFRARED...\r\n"
@@ -125,11 +134,7 @@ def test_unverified_infrared_capability_is_not_advertised() -> None:
 
 
 def test_verified_infrared_capability_executes_and_normalizes_signal() -> None:
-    adapter = FlipperAdapter(
-        "/dev/fake",
-        serial_factory=_factory(),
-        verified_capabilities={INFRARED_OBSERVE},
-    )
+    adapter = _verified_adapter()
     action = Action(
         action_id="ir-2",
         capability_id=INFRARED_OBSERVE,
@@ -148,11 +153,7 @@ def test_verified_infrared_capability_executes_and_normalizes_signal() -> None:
 
 
 def test_verified_infrared_capability_is_inconclusive_when_no_signal_arrives() -> None:
-    adapter = FlipperAdapter(
-        "/dev/fake",
-        serial_factory=_factory(emit_signal=False),
-        verified_capabilities={INFRARED_OBSERVE},
-    )
+    adapter = _verified_adapter(emit_signal=False)
     action = Action(
         action_id="ir-3",
         capability_id=INFRARED_OBSERVE,
@@ -169,11 +170,7 @@ def test_verified_infrared_capability_is_inconclusive_when_no_signal_arrives() -
 
 
 def test_infrared_validation_rejects_duration_outside_bounds() -> None:
-    adapter = FlipperAdapter(
-        "/dev/fake",
-        serial_factory=_factory(),
-        verified_capabilities={INFRARED_OBSERVE},
-    )
+    adapter = _verified_adapter()
     action = Action(
         action_id="ir-4",
         capability_id=INFRARED_OBSERVE,
