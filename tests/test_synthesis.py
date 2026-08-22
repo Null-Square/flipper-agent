@@ -94,7 +94,7 @@ def test_default_synthesis_profile_rejects_transmit_class_generated_app() -> Non
     assert any(item.rule_id == "manifest.profile_action_exceeded" for item in decision.errors)
 
 
-def test_operator_policy_profile_can_raise_action_ceiling_without_bypassing_source_rules() -> None:
+def test_operator_profile_can_raise_action_ceiling_without_bypassing_source_rules() -> None:
     profile = SynthesisPolicyProfile(max_action_class=ActionClass.TRANSMIT)
     policy = GeneratedSourcePolicy(profile)
     request = _request(action_class=ActionClass.TRANSMIT)
@@ -123,8 +123,9 @@ def test_project_writer_creates_external_fap_project_with_hashes(tmp_path: Path)
     assert "FlipperAppType.EXTERNAL" in fam
     assert 'fap_category="NullSquare"' in fam
     assert 'targets=["f7"]' in fam
-    assert project.source_sha256 == hashlib.sha256(
-        project.source_path.read_bytes()
+    assert project.source_sha256 == hashlib.sha256(project.source_path.read_bytes()).hexdigest()
+    assert project.app_manifest_sha256 == hashlib.sha256(
+        project.app_manifest_path.read_bytes()
     ).hexdigest()
     assert project.synthesis_manifest_sha256 == hashlib.sha256(
         project.synthesis_manifest_path.read_bytes()
@@ -167,12 +168,24 @@ def test_ufbt_builder_uses_fixed_non_shell_command_and_records_provenance(tmp_pa
     assert artifact.builder_version == "ufbt 0.2-test"
     assert artifact.artifact_sha256 == hashlib.sha256(b"compiled-fap").hexdigest()
     assert artifact.source_sha256 == project.source_sha256
+    assert artifact.app_manifest_sha256 == project.app_manifest_sha256
     assert artifact.build_command == ("ufbt",)
     assert artifact.build_log_path.is_file()
     assert calls[0][0] == ["ufbt"]
     assert calls[0][1]["shell"] is False
     assert calls[0][1]["cwd"] == project.root.resolve()
     assert "GITHUB_TOKEN" not in calls[0][1]["env"]
+
+
+def test_builder_rejects_source_changed_after_policy_review(tmp_path: Path) -> None:
+    project = GeneratedProjectWriter(tmp_path).write(_manifest(), SAFE_GPIO_SOURCE)
+    project.source_path.write_text(SAFE_GPIO_SOURCE + "\n// changed\n", encoding="utf-8")
+
+    def forbidden_runner(*args, **kwargs):
+        raise AssertionError("tampered project must never reach uFBT")
+
+    with pytest.raises(GeneratedAppBuildError, match="source changed"):
+        UfbTBuilder(runner=forbidden_runner).build(project)
 
 
 def test_ufbt_builder_fails_closed_on_timeout(tmp_path: Path) -> None:
