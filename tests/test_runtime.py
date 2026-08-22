@@ -17,7 +17,7 @@ def active_engagement() -> Engagement:
         target_ids=frozenset({"target-a"}),
         allowed_capabilities=("wireless.*", "infrared.*"),
         denied_capabilities=("*.emulate", "*.transmit"),
-        max_action_class=ActionClass.OBSERVE,
+        max_action_class=ActionClass.INTERACT,
     )
 
 
@@ -27,6 +27,7 @@ def test_registry_routes_to_simulator() -> None:
 
     route = registry.choose("wireless.nfc.identify")
     assert route.capability.instrument_id == "simulator-1"
+    assert route.capability.action_class is ActionClass.INTERACT
 
 
 def test_executor_runs_allowed_action_and_records_evidence(tmp_path) -> None:
@@ -41,7 +42,7 @@ def test_executor_runs_allowed_action_and_records_evidence(tmp_path) -> None:
         action_id="act-1",
         capability_id="wireless.nfc.identify",
         target_id="target-a",
-        action_class=ActionClass.OBSERVE,
+        action_class=ActionClass.INTERACT,
     )
 
     result = executor.execute(active_engagement(), action)
