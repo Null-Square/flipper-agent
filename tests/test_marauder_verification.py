@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import pytest
@@ -302,7 +301,9 @@ def test_network_profile_can_verify_allowlisted_controlled_service(tmp_path, mon
     )
 
     assert len(records) == 4
-    port_record = next(record for record in records if record.capability_id == MARAUDER_WIFI_PORTS_SCAN)
+    port_record = next(
+        record for record in records if record.capability_id == MARAUDER_WIFI_PORTS_SCAN
+    )
     assert port_record.passed is True
     assert "portscan -s https -serial" in backend.writes
 
