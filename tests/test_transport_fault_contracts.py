@@ -11,7 +11,7 @@ from hardware_pentest.adapters.flipper.transport import (
     MAX_RESPONSE_BYTES,
     FlipperSerialTransport,
 )
-from tests.support.scripted_serial import SerialStep, ScriptedSerial, serial_factory
+from tests.support.scripted_serial import ScriptedSerial, SerialStep, serial_factory
 
 pytestmark = pytest.mark.contract
 
