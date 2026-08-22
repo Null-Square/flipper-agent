@@ -108,7 +108,6 @@ def test_persisted_running_step_requires_explicit_recovery_and_is_not_retried(tm
 
     recovered = runner.recover_interrupted(paused.state)
 
-    assert recovered.state if False else True
     assert recovered.steps[0].status is StepStatus.INTERRUPTED
     assert recovered.steps[0].evidence_ids == ()
     assert recovered.status is AssessmentStatus.COMPLETED
