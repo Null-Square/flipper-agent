@@ -46,7 +46,7 @@ class VerificationFakeSerial:
             )
         elif command in {"clearlist -a", "clearlist -c"}:
             self._respond(command, "0 selected")
-        elif command in {"scanall", "sniffbeacon"}:
+        elif command in {"scanall -serial", "sniffbeacon -serial"}:
             self._respond(command, f"Starting {command}. Stop with stopscan")
         elif command == "stopscan":
             self._respond(command, "Stopping WiFi tran/recv")
