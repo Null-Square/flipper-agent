@@ -5,12 +5,21 @@ import re
 from pathlib import Path
 from typing import Any
 
-_SECRET_PATTERNS = (
-    re.compile(r"(?im)\bPassword:\s*(?!<redacted-secret>)[^\r\n]+"),
-    re.compile(r"(?im)\bjoin\s+-a\s+\d+\s+-p\s+(?!<redacted-secret>)[^\r\n]+"),
-    re.compile(r"(?im)^hardware[_\.]uid\s*:\s*(?!<redacted-uid>)[^\r\n]+"),
-    re.compile(r"\b(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b"),
+_SENSITIVE_VALUES = (
+    (
+        re.compile(r"(?im)\bPassword:\s*(?P<value>[^\r\n]+)"),
+        "<redacted-secret>",
+    ),
+    (
+        re.compile(r"(?im)\bjoin\s+-a\s+\d+\s+-p\s+(?P<value>[^\r\n]+)"),
+        "<redacted-secret>",
+    ),
+    (
+        re.compile(r"(?im)^hardware[_\.]uid\s*:\s*(?P<value>[^\r\n]+)"),
+        "<redacted-uid>",
+    ),
 )
+_MAC = re.compile(r"\b(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b")
 
 
 class TranscriptReplaySerial:
@@ -85,9 +94,7 @@ def replay_factory(path: str | Path, *, label: str):
 def _load_fixture(path: str | Path) -> dict[str, Any]:
     fixture_path = Path(path)
     text = fixture_path.read_text(encoding="utf-8")
-    for pattern in _SECRET_PATTERNS:
-        if pattern.search(text):
-            raise ValueError(f"Transcript fixture contains unsanitized sensitive data: {fixture_path}")
+    _validate_fixture_hygiene(text, fixture_path)
     payload = json.loads(text)
     if not isinstance(payload, dict) or payload.get("schema_version") != "1":
         raise ValueError("Transcript fixture must use schema_version '1'")
@@ -95,3 +102,14 @@ def _load_fixture(path: str | Path) -> dict[str, Any]:
     if not isinstance(sessions, list) or not sessions:
         raise ValueError("Transcript fixture must contain at least one session")
     return payload
+
+
+def _validate_fixture_hygiene(text: str, path: Path) -> None:
+    if _MAC.search(text):
+        raise ValueError(f"Transcript fixture contains unsanitized sensitive data: {path}")
+    for pattern, allowed_value in _SENSITIVE_VALUES:
+        for match in pattern.finditer(text):
+            if match.group("value").strip() != allowed_value:
+                raise ValueError(
+                    f"Transcript fixture contains unsanitized sensitive data: {path}"
+                )
