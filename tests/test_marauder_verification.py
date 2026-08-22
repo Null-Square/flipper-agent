@@ -58,7 +58,11 @@ class VerificationFakeSerial:
         self._buffer.clear()
 
 
-def factory(*, banner: bool = True, access_points: tuple[str, ...] = ("[0][CH:6] NULLSQUARE-HIL-AP -40",)):
+def factory(
+    *,
+    banner: bool = True,
+    access_points: tuple[str, ...] = ("[0][CH:6] NULLSQUARE-HIL-AP -40",),
+):
     def build(**kwargs: Any) -> VerificationFakeSerial:
         return VerificationFakeSerial(banner=banner, access_points=access_points, **kwargs)
 
@@ -106,7 +110,10 @@ def test_wrong_expected_ap_creates_failed_record(tmp_path) -> None:
     )
 
     assert record.passed is False
-    assert any(check.check_id == "expected_lab_ap_observed" and not check.passed for check in record.checks)
+    assert any(
+        check.check_id == "expected_lab_ap_observed" and not check.passed
+        for check in record.checks
+    )
 
 
 def test_verification_requires_explicit_known_ap_confirmation(tmp_path) -> None:
