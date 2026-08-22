@@ -41,6 +41,34 @@ Hardware Pentest Agent
              +-- other tools    <- future
 ```
 
+## Harness-neutral by design
+
+Hardware Pentest Agent owns the **hardware-pentesting domain**, not the generic LLM loop.
+
+Codex, Null-AI, another MCP-capable harness, or a future hosted agent can sit outside the runtime:
+
+```text
+Codex / Null-AI / another agent harness
+        |
+        | MCP / CLI / Python
+        v
+Hardware Pentest Agent
+        |
+        +-- durable assessment context
+        +-- methodology / TestCases
+        +-- capability registry
+        +-- scope / policy / approvals
+        +-- physical preflight / HIL verification
+        +-- evidence / observations / findings
+        |
+        v
+Flipper / Marauder / future instruments
+```
+
+The outer harness may own model inference, conversation compaction, generic retries, and user interaction. Critical pentest state must remain durable in this runtime so changing harnesses does not change safety or evidence semantics.
+
+See [`docs/HARNESS_INTEGRATION.md`](docs/HARNESS_INTEGRATION.md).
+
 ## Why this project exists
 
 IoT and embedded assessments cross several attack surfaces: wireless interfaces, internal buses, debug ports, storage, firmware, physical interfaces, network services, mobile applications, APIs, and cloud services.
@@ -137,7 +165,7 @@ The MVP targets at least four working families from the Flipper Zero where suppo
 
 The MVP does not provide autonomous destructive or high-impact testing. The initial release excludes arbitrary shell execution, unrestricted FAP execution, credential attacks, autonomous emulation, arbitrary BadUSB payload execution, fault injection, invasive memory extraction, and unrestricted RF transmission.
 
-These actions can only enter later milestones after the authorization, policy, legal, and physical-safety model is proven.
+Policy-reviewed generated FAPs may be synthesized and executed only through the reserved NullSquare generated-app pipeline with immutable build provenance, bounded runtime, structured evidence, approval, and cleanup. That is not an arbitrary FAP execution escape hatch.
 
 ## Safety model
 
@@ -207,15 +235,20 @@ The reporting layer promotes an observation to a finding only when evidence supp
 src/hardware_pentest/
   core/          domain models and capability contracts
   runtime/       discovery, registry, routing, execution, jobs
+  service/       harness-neutral domain service facade
   policy/        scope, risk, approvals, physical constraints
   evidence/      artifacts, provenance, observations, findings
   adapters/      device/tool integrations
     flipper/     first instrument adapter
-  interfaces/    CLI, Python API, MCP adapter
+    marauder/    ESP32 Marauder Wi-Fi adapter
+  interfaces/    CLI and thin MCP adapters
   reporting/     assessment output
+  synthesis/     policy-gated generated Flipper capabilities
 
 docs/
   ARCHITECTURE.md
+  HARNESS_INTEGRATION.md
+  TESTING.md
   MVP.md
   ROADMAP.md
   SECURITY_MODEL.md
@@ -226,27 +259,61 @@ docs/
 
 MCP is an interface, not the architecture.
 
-The core runtime should remain usable from:
+The runtime is intended to remain usable from:
 
-- a Python API;
-- a local CLI;
+- a native Python service facade;
+- the local CLI;
 - an MCP server;
-- Null-AI or another agent harness through a native integration later.
+- Null-AI or another outer agent harness.
 
-The first MCP surface should expose high-level assessment operations instead of raw device commands.
+Install MCP support with:
+
+```bash
+pip install -e ".[mcp]"
+```
+
+Local MCP via stdio:
+
+```bash
+hardware-pentest-mcp
+```
+
+Local Streamable HTTP MCP:
+
+```bash
+hardware-pentest-mcp --transport streamable-http --host 127.0.0.1 --port 8765
+```
+
+The built-in MCP launcher refuses non-loopback binding. Hosted/online harnesses should reach a localhost service through a secure MCP tunnel or a separately authenticated deployment layer rather than exposing unauthenticated hardware control publicly.
+
+The initial MCP surface is intentionally high-level and read-oriented. Raw serial, raw Flipper CLI, and raw Marauder commands are not tools.
+
+## Testing
+
+Use the named test harness profiles:
+
+```bash
+python scripts/test_harness.py quick
+python scripts/test_harness.py contract
+python scripts/test_harness.py ci
+```
+
+Real hardware HIL is explicit and opt-in. Recorded sanitized device transcripts can be replayed through production transports in ordinary CI, but replay never creates hardware-verification evidence.
+
+See [`docs/TESTING.md`](docs/TESTING.md).
 
 ## Roadmap summary
 
-1. Define schemas and deterministic simulator.
-2. Build the Flipper USB transport and adapter.
-3. Implement capability discovery and passive-first actions.
-4. Add engagement policy, approval gates, and evidence capture.
-5. Run a reproducible multi-step Flipper assessment.
-6. Add a small MCP interface over the runtime.
-7. Add Proxmark3 as the second instrument and prove vendor-neutral routing.
-8. Add logic/debug/RF/firmware tool adapters.
-9. Build multi-instrument IoT hardware assessments.
-10. Integrate the runtime with Null-AI.
+1. Define schemas and deterministic simulator. **Done**
+2. Build the Flipper USB transport and adapter. **Done**
+3. Implement capability discovery and passive-first actions. **In progress / working MVP**
+4. Add engagement policy, approval gates, and evidence capture. **Done**
+5. Run a reproducible multi-step Flipper assessment. **Done in software; physical coverage expanding**
+6. Add a harness-neutral service facade and MCP interface. **In progress**
+7. Harden real-device HIL, transcript replay, and agent evaluations. **In progress**
+8. Add Proxmark3 as the second instrument and prove vendor-neutral routing.
+9. Add logic/debug/RF/firmware tool adapters.
+10. Build multi-instrument IoT hardware assessments and integrate with Null-AI/other harnesses.
 
 See [`docs/ROADMAP.md`](docs/ROADMAP.md) and [`docs/MVP.md`](docs/MVP.md).
 
@@ -269,7 +336,7 @@ Use it only on targets that you own or are explicitly authorized to assess. Foll
 
 ## Current status
 
-**Phase:** architecture and Flipper-first MVP foundation.
+**Phase:** Flipper-first harness kernel, real-hardware hardening, and harness-neutral integration.
 
 The repository is not yet a production pentesting system.
 
