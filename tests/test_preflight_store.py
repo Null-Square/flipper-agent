@@ -19,7 +19,11 @@ def identity(name: str = "composite:abc") -> InstrumentIdentity:
     )
 
 
-def report(*, ready_identity: InstrumentIdentity | None = None, ready: bool = True) -> PreflightReport:
+def report(
+    *,
+    ready_identity: InstrumentIdentity | None = None,
+    ready: bool = True,
+) -> PreflightReport:
     composite = ready_identity if ready else None
     return PreflightReport(
         checks=(),
