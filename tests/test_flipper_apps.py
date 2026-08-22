@@ -60,7 +60,11 @@ class AppFakeSerial:
             self.running = True
             self._respond(command, "Application started")
         elif command == "loader info":
-            body = "Application: ESP32 WiFi Marauder" if self.running else "No application is running"
+            body = (
+                "Application: ESP32 WiFi Marauder"
+                if self.running
+                else "No application is running"
+            )
             self._respond(command, body)
         elif command == "loader close":
             self.running = False
