@@ -11,7 +11,6 @@ from hardware_pentest.core.models import InstrumentIdentity
 from hardware_pentest.preflight import PreflightReport
 from hardware_pentest.preflight.ports import SerialPortMetadata
 
-
 IMPLEMENTED = {
     "wireless.wifi.environment.scan",
     "wireless.wifi.beacons.observe",
@@ -166,7 +165,8 @@ def test_successful_setup_reports_ready_and_remaining_verification_work(
     assert payload["wifi_assessment_ready"] is True
     assert set(payload["wifi_capabilities"]["implemented"]) == IMPLEMENTED
     assert set(payload["wifi_capabilities"]["hardware_verified"]) == VERIFIED
-    assert set(payload["wifi_capabilities"]["blocked_pending_verification"]) == IMPLEMENTED - VERIFIED
+    blocked = set(payload["wifi_capabilities"]["blocked_pending_verification"])
+    assert blocked == IMPLEMENTED - VERIFIED
     assert len(payload["verification_records"]) == 2
 
 
