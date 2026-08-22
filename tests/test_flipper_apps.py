@@ -57,7 +57,7 @@ class AppFakeSerial:
             self._respond(command, body)
         elif command == f"storage md5 {MARAUDER_APP.path}":
             self._respond(command, "0123456789abcdef0123456789ABCDEF")
-        elif command == f"loader open {MARAUDER_APP.path}":
+        elif command == f'loader open "{MARAUDER_APP.path}"':
             self.running_app_name = MARAUDER_APP.display_name
             self._respond(command, "")
         elif command == "loader info":
@@ -154,7 +154,7 @@ def test_launch_uses_exact_catalogued_fap_and_verifies_running_app_name() -> Non
     assert state.running is True
     assert state.application_name == MARAUDER_APP.display_name
     writes = [item for instance in instances for item in instance.writes]
-    assert f"loader open {MARAUDER_APP.path}\r".encode() in writes
+    assert f'loader open "{MARAUDER_APP.path}"\r'.encode() in writes
 
 
 def test_unknown_app_id_is_rejected_before_device_io() -> None:
