@@ -57,6 +57,8 @@ RPC is the preferred structured path where it adds clear value. It will be intro
 
 CI verifies the transport with deterministic fake serial fixtures. Real hardware verification remains required before Milestone 1 is complete.
 
+The `flipper-self-test` command opens two independent read-only CLI sessions. It confirms that the Flipper identity, transport, and firmware metadata remain stable. It can also write a JSON verification record that can be attached to the milestone evidence.
+
 The real-device checklist is:
 
 1. Install the project with the `flipper` extra.
@@ -64,9 +66,9 @@ The real-device checklist is:
 3. Close qFlipper or other programs that own the serial device.
 4. Run `hardware-pentest flipper-ports`.
 5. Run `hardware-pentest flipper-probe --port <PORT>`.
-6. Confirm the reported model is `Flipper Zero`.
-7. Confirm a firmware version is captured when the firmware provides it.
-8. Disconnect the device and confirm the command fails safely.
-9. Reconnect and repeat the probe.
+6. Run `hardware-pentest flipper-self-test --port <PORT> --output verification.json`.
+7. Confirm the self-test reports `passed: true`.
+8. Disconnect the device and confirm the probe fails safely.
+9. Reconnect and repeat the self-test.
 
-Record the firmware version, host operating system, and result when the hardware test is performed.
+Record the firmware version, host operating system, and generated verification record when the hardware test is performed.
