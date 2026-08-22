@@ -19,7 +19,11 @@ dependencies = [
 flipper = [
   "pyserial>=3.5",
 ]
+mcp = [
+  "mcp>=2,<3",
+]
 dev = [
+  "mcp>=2,<3",
   "pytest>=8.3",
   "ruff>=0.9",
 ]
@@ -28,6 +32,7 @@ dev = [
 hardware-pentest = "hardware_pentest.interfaces.cli:main"
 hardware-pentest-preflight = "hardware_pentest.interfaces.preflight_cli:main"
 hardware-pentest-wifi-setup = "hardware_pentest.interfaces.wifi_setup_cli:main"
+hardware-pentest-mcp = "hardware_pentest.interfaces.mcp_server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/hardware_pentest"]
