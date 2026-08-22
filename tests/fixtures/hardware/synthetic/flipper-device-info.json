@@ -1,0 +1,26 @@
+{
+  "schema_version": "1",
+  "source": "synthetic-contract-sample",
+  "sessions": [
+    {
+      "session_id": "synthetic-flipper-identity",
+      "label": "flipper-identity",
+      "opened_at": "2000-01-01T00:00:00+00:00",
+      "port_hint": "synthetic",
+      "events": [
+        {
+          "direction": "rx",
+          "data": ">: "
+        },
+        {
+          "direction": "tx",
+          "data": "info device\r"
+        },
+        {
+          "direction": "rx",
+          "data": "info device\r\nhardware_model: Flipper Zero\r\nhardware_uid: <redacted-uid>\r\nfirmware_version: 1.4.3\r\n>: "
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "schema_version": "1",
+  "source": "synthetic-contract-sample",
+  "sessions": [
+    {
+      "session_id": "synthetic-marauder-probe",
+      "label": "marauder-probe",
+      "opened_at": "2000-01-01T00:00:00+00:00",
+      "port_hint": "synthetic",
+      "events": [
+        {
+          "direction": "rx",
+          "data": "ESP-IDF version is: v5.5\r\n--------------------------------\r\n         ESP32 Marauder\r\n            v1.12.1\r\n--------------------------------\r\n> "
+        },
+        {
+          "direction": "tx",
+          "data": "help\n"
+        },
+        {
+          "direction": "rx",
+          "data": "#help\r\nscanall\r\nsniffbeacon\r\nstopscan [-f]\r\nlist -a\r\n> "
+        }
+      ]
+    }
+  ]
+}
