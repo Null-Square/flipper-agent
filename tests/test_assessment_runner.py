@@ -129,6 +129,36 @@ def test_inconclusive_result_remains_inconclusive_and_is_evidence_linked(tmp_pat
     assert result.state.findings == ()
 
 
+def test_blocked_execution_remains_blocked_and_does_not_create_observation(tmp_path) -> None:
+    adapter = SimulatedAdapter(
+        scripted_results={
+            "infrared.observe": {
+                "status": ExecutionStatus.BLOCKED,
+                "normalized": {},
+            }
+        }
+    )
+    registry, store, runner = runtime(tmp_path, adapter)
+    test_case = tuple(
+        item for item in flipper_mvp_test_catalog() if item.required_capability == "infrared.observe"
+    )
+    state = AssessmentPlanner().plan(
+        engagement=engagement(),
+        target=target(),
+        registry=registry,
+        test_cases=test_case,
+        assessment_id="assessment-blocked-execution",
+    )
+    store.save(state)
+
+    result = runner.run_next(engagement(), state)
+
+    assert result.state.steps[0].status is StepStatus.BLOCKED
+    assert result.state.steps[0].evidence_ids
+    assert result.state.observations == ()
+    assert result.state.status is AssessmentStatus.COMPLETED
+
+
 def test_approval_gate_pauses_without_execution_then_resumes(tmp_path) -> None:
     registry, store, runner = runtime(tmp_path)
     approved_test = TestCase(
