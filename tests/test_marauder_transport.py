@@ -77,16 +77,7 @@ class MarauderFakeSerial:
             self._respond(command, body)
         elif command in {"clearlist -a", "clearlist -c", "clearlist -s"}:
             self._respond(command, "0 selected")
-        elif command in {
-            "scanall",
-            "sniffraw",
-            "sniffbeacon",
-            "sniffprobe",
-            "sniffdeauth",
-            "sniffpmkid",
-            "sniffsae",
-            "packetcount",
-        } or command.startswith("sniffpmkid -c "):
+        elif _is_observation_command(command):
             self._respond(command, f"Starting {command}. Stop with stopscan")
             lines = self.stream_lines.get(command, ())
             if lines:
@@ -109,6 +100,24 @@ class MarauderFakeSerial:
 
     def reset_input_buffer(self) -> None:
         self._buffer.clear()
+
+
+def _is_observation_command(command: str) -> bool:
+    tokens = command.split()
+    if not tokens:
+        return False
+    if tokens[0] not in {
+        "scanall",
+        "sniffraw",
+        "sniffbeacon",
+        "sniffprobe",
+        "sniffdeauth",
+        "sniffpmkid",
+        "sniffsae",
+        "packetcount",
+    }:
+        return False
+    return "-serial" in tokens
 
 
 def factory(**configuration: Any):
@@ -177,7 +186,7 @@ def test_passive_beacon_capture_uses_only_bounded_safe_command_sequence() -> Non
     assert instances[0].writes == [
         b"help\n",
         b"clearlist -a\n",
-        b"sniffbeacon\n",
+        b"sniffbeacon -serial\n",
         b"stopscan\n",
         b"list -a\n",
     ]
@@ -201,7 +210,7 @@ def test_environment_scan_clears_and_returns_ap_and_station_snapshots() -> None:
         b"help\n",
         b"clearlist -a\n",
         b"clearlist -c\n",
-        b"scanall\n",
+        b"scanall -serial\n",
         b"stopscan\n",
         b"list -a\n",
         b"list -c\n",
@@ -211,20 +220,21 @@ def test_environment_scan_clears_and_returns_ap_and_station_snapshots() -> None:
 @pytest.mark.parametrize(
     ("method_name", "expected_command"),
     [
-        ("observe_raw_frames", b"sniffraw\n"),
-        ("observe_probe_requests", b"sniffprobe\n"),
-        ("observe_deauth_frames", b"sniffdeauth\n"),
-        ("observe_sae", b"sniffsae\n"),
-        ("observe_packet_activity", b"packetcount\n"),
+        ("observe_raw_frames", b"sniffraw -serial\n"),
+        ("observe_probe_requests", b"sniffprobe -serial\n"),
+        ("observe_deauth_frames", b"sniffdeauth -serial\n"),
+        ("observe_sae", b"sniffsae -serial\n"),
+        ("observe_packet_activity", b"packetcount -serial\n"),
     ],
 )
 def test_passive_observation_methods_use_fixed_commands(method_name, expected_command) -> None:
     instances: list[MarauderFakeSerial] = []
+    command_text = expected_command.decode().strip()
     with MarauderSerialTransport(
         "/dev/fake",
         serial_factory=factory(
             instances=instances,
-            stream_lines={expected_command.decode().strip(): ("observed frame",)},
+            stream_lines={command_text: ("observed frame",)},
         ),
         boot_timeout=0.01,
         command_timeout=0.05,
@@ -240,11 +250,12 @@ def test_passive_observation_methods_use_fixed_commands(method_name, expected_co
 
 def test_pmkid_observation_never_generates_active_deauthentication_flag() -> None:
     instances: list[MarauderFakeSerial] = []
+    command = "sniffpmkid -c 6 -serial"
     with MarauderSerialTransport(
         "/dev/fake",
         serial_factory=factory(
             instances=instances,
-            stream_lines={"sniffpmkid -c 6": ("EAPOL observed",)},
+            stream_lines={command: ("EAPOL observed",)},
         ),
         boot_timeout=0.01,
         command_timeout=0.05,
@@ -252,7 +263,7 @@ def test_pmkid_observation_never_generates_active_deauthentication_flag() -> Non
         transport.probe()
         capture = transport.observe_pmkid(0.05, channel=6)
 
-    assert b"sniffpmkid -c 6\n" in instances[0].writes
+    assert b"sniffpmkid -c 6 -serial\n" in instances[0].writes
     assert "EAPOL observed" in capture.stream_output
     assert not any(b" -d" in write for write in instances[0].writes)
     assert not any(b"attack" in write for write in instances[0].writes)
