@@ -120,7 +120,10 @@ def factory(
     return build
 
 
-def verifier(tmp_path, **factory_kwargs: Any) -> tuple[FlipperCapabilityVerifier, LocalVerificationStore]:
+def verifier(
+    tmp_path,
+    **factory_kwargs: Any,
+) -> tuple[FlipperCapabilityVerifier, LocalVerificationStore]:
     store = LocalVerificationStore(tmp_path / "verification")
     return (
         FlipperCapabilityVerifier(
