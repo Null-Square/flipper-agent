@@ -239,7 +239,7 @@ def test_gpio_verification_requires_explicit_electrical_setup_confirmation(tmp_p
 def test_gpio_verification_rejects_debug_pin(tmp_path) -> None:
     subject, _store = verifier(tmp_path)
 
-    with pytest.raises(ValueError, match="not an allowed read-only GPIO pin"):
+    with pytest.raises(ValueError, match="non-debug GPIO pins"):
         subject.verify_gpio(
             pin="PB7",
             expected_level=1,
