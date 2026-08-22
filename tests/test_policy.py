@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from hardware_pentest.core.models import (
     Action,
@@ -10,7 +10,7 @@ from hardware_pentest.policy.engine import PolicyEngine
 
 
 def engagement() -> Engagement:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return Engagement(
         engagement_id="test-engagement",
         valid_from=now - timedelta(minutes=1),
