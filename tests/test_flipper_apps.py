@@ -70,7 +70,11 @@ class AppFakeSerial:
         elif command == "loader close":
             old_name = self.running_app_name
             self.running_app_name = None
-            body = f'Application "{old_name}" was closed' if old_name else "No application is running"
+            body = (
+                f'Application "{old_name}" was closed'
+                if old_name
+                else "No application is running"
+            )
             self._respond(command, body)
         elif command.startswith("input send "):
             self._respond(command, "")
