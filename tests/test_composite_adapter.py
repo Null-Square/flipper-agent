@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
-
-import pytest
+from datetime import UTC, datetime
 
 import hardware_pentest.adapters.composite.flipper_marauder as composite_module
+import pytest
 from hardware_pentest.adapters.composite import FlipperMarauderAdapter
 from hardware_pentest.adapters.flipper.apps import MARAUDER_APP
 from hardware_pentest.adapters.flipper.apps.models import FlipperAppInstallation
@@ -168,21 +167,33 @@ def record_ready(adapter: FlipperMarauderAdapter) -> None:
     adapter.preflight_store.record(report, tested_at=datetime.now(UTC))
 
 
-def test_composite_exposes_no_capabilities_without_matching_preflight(tmp_path, monkeypatch) -> None:
+def test_composite_exposes_no_capabilities_without_matching_preflight(
+    tmp_path,
+    monkeypatch,
+) -> None:
     adapter = make_adapter(tmp_path, monkeypatch)
 
     assert adapter.capabilities() == []
 
 
-def test_matching_preflight_exposes_verified_component_capabilities(tmp_path, monkeypatch) -> None:
+def test_matching_preflight_exposes_verified_component_capabilities(
+    tmp_path,
+    monkeypatch,
+) -> None:
     adapter = make_adapter(tmp_path, monkeypatch)
     record_ready(adapter)
 
     capabilities = {item.capability_id: item for item in adapter.capabilities()}
 
     assert set(capabilities) == {FLIPPER_IR, MARAUDER_WIFI}
-    assert all(item.instrument_id.startswith("flipper-marauder:") for item in capabilities.values())
-    assert capabilities[MARAUDER_WIFI].quality["physical_instrument_id"] == "marauder:BOARD123"
+    assert all(
+        item.instrument_id.startswith("flipper-marauder:")
+        for item in capabilities.values()
+    )
+    assert (
+        capabilities[MARAUDER_WIFI].quality["physical_instrument_id"]
+        == "marauder:BOARD123"
+    )
     assert capabilities[MARAUDER_WIFI].quality["preflight_record_id"]
 
 
@@ -198,7 +209,10 @@ def test_fap_fingerprint_change_invalidates_preflight(tmp_path, monkeypatch) -> 
         FakeAppManager.md5 = "0123456789abcdef0123456789abcdef"
 
 
-def test_wifi_execution_keeps_composite_and_physical_provenance(tmp_path, monkeypatch) -> None:
+def test_wifi_execution_keeps_composite_and_physical_provenance(
+    tmp_path,
+    monkeypatch,
+) -> None:
     adapter = make_adapter(tmp_path, monkeypatch)
     record_ready(adapter)
     action = Action(
@@ -218,7 +232,10 @@ def test_wifi_execution_keeps_composite_and_physical_provenance(tmp_path, monkey
     assert result.raw["_preflight_record_id"]
 
 
-def test_recent_preflight_can_fill_missing_runtime_marauder_boot_banner(tmp_path, monkeypatch) -> None:
+def test_recent_preflight_can_fill_missing_runtime_marauder_boot_banner(
+    tmp_path,
+    monkeypatch,
+) -> None:
     adapter = make_adapter(tmp_path, monkeypatch)
     record_ready(adapter)
     expected = adapter.probe()
@@ -232,7 +249,10 @@ def test_recent_preflight_can_fill_missing_runtime_marauder_boot_banner(tmp_path
     assert recovered == expected
 
 
-def test_new_runtime_marauder_firmware_invalidates_old_preflight(tmp_path, monkeypatch) -> None:
+def test_new_runtime_marauder_firmware_invalidates_old_preflight(
+    tmp_path,
+    monkeypatch,
+) -> None:
     adapter = make_adapter(tmp_path, monkeypatch)
     record_ready(adapter)
 
