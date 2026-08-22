@@ -130,7 +130,7 @@ class MarauderFakeSerial:
             self._respond(command, "sniffbeacon\r\nstopscan [-f]\r\nlist -a")
         elif command == "clearlist -a":
             self._respond(command, "0 selected")
-        elif command == "sniffbeacon":
+        elif command == "sniffbeacon -serial":
             self._respond(command, "StartingBeacon sniff. Stop with stopscan")
         elif command == "stopscan":
             self._respond(command, "Stopping WiFi tran/recv")

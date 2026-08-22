@@ -4,7 +4,10 @@ from typing import Any
 
 import pytest
 
-from hardware_pentest.adapters.marauder import MARAUDER_WIFI_BEACONS_OBSERVE
+from hardware_pentest.adapters.marauder import (
+    MARAUDER_WIFI_BEACONS_OBSERVE,
+    MARAUDER_WIFI_ENVIRONMENT_SCAN,
+)
 from hardware_pentest.adapters.marauder.verification_procedures import MarauderCapabilityVerifier
 from hardware_pentest.verification import LocalVerificationStore
 
@@ -37,15 +40,20 @@ class VerificationFakeSerial:
     def write(self, data: bytes) -> int:
         command = data.decode("ascii").rstrip("\n")
         if command == "help":
-            self._respond(command, "sniffbeacon\r\nstopscan [-f]\r\nlist -a")
-        elif command == "clearlist -a":
+            self._respond(
+                command,
+                "scanall\r\nsniffbeacon\r\nstopscan [-f]\r\nlist -a\r\nlist -c",
+            )
+        elif command in {"clearlist -a", "clearlist -c"}:
             self._respond(command, "0 selected")
-        elif command == "sniffbeacon":
-            self._respond(command, "StartingBeacon sniff. Stop with stopscan")
+        elif command in {"scanall -serial", "sniffbeacon -serial"}:
+            self._respond(command, f"Starting {command}. Stop with stopscan")
         elif command == "stopscan":
             self._respond(command, "Stopping WiFi tran/recv")
         elif command == "list -a":
             self._respond(command, "\r\n".join(self.access_points))
+        elif command == "list -c":
+            self._respond(command, "[0] AA:BB:CC:DD:EE:FF -> AP 0 -50")
         return len(data)
 
     def _respond(self, command: str, body: str) -> None:
@@ -92,6 +100,27 @@ def test_known_ap_verification_creates_pass_record_and_enables_capability(tmp_pa
         identity=_identity_from_record(record),
         implemented_capabilities={MARAUDER_WIFI_BEACONS_OBSERVE},
     ) == frozenset({MARAUDER_WIFI_BEACONS_OBSERVE})
+
+
+def test_environment_scan_can_be_verified_against_same_known_ap(tmp_path) -> None:
+    store = LocalVerificationStore(tmp_path / "verification")
+    verifier = MarauderCapabilityVerifier(
+        "/dev/fake",
+        serial_number="BOARD123",
+        serial_factory=factory(),
+        store=store,
+    )
+
+    record = verifier.verify_environment_scan(
+        expected_ssid="NULLSQUARE-HIL-AP",
+        expected_channel=6,
+        known_ap_confirmed=True,
+        duration_seconds=0.05,
+    )
+
+    assert record.passed is True
+    assert record.capability_id == MARAUDER_WIFI_ENVIRONMENT_SCAN
+    assert store.evidence_is_intact(record) is True
 
 
 def test_wrong_expected_ap_creates_failed_record(tmp_path) -> None:
@@ -144,6 +173,24 @@ def test_unknown_firmware_cannot_create_verification_record(tmp_path) -> None:
             known_ap_confirmed=True,
             duration_seconds=0.05,
         )
+
+
+def test_preflight_firmware_hint_allows_same_board_reconnect_verification(tmp_path) -> None:
+    verifier = MarauderCapabilityVerifier(
+        "/dev/fake",
+        serial_number="BOARD123",
+        serial_factory=factory(banner=False),
+        firmware_version_hint="v1.12.1",
+        store=LocalVerificationStore(tmp_path / "verification"),
+    )
+
+    record = verifier.verify_beacon_observation(
+        expected_ssid="NULLSQUARE-HIL-AP",
+        known_ap_confirmed=True,
+        duration_seconds=0.05,
+    )
+
+    assert record.firmware_version == "v1.12.1"
 
 
 def _identity_from_record(record):

@@ -4,6 +4,9 @@ from typing import Any
 
 from hardware_pentest.adapters.marauder import (
     MARAUDER_WIFI_BEACONS_OBSERVE,
+    MARAUDER_WIFI_DEAUTH_FRAMES_OBSERVE,
+    MARAUDER_WIFI_ENVIRONMENT_SCAN,
+    MARAUDER_WIFI_PMKID_OBSERVE,
     MarauderAdapter,
 )
 from hardware_pentest.core.models import Action, ActionClass, ExecutionStatus
@@ -15,12 +18,15 @@ class AdapterFakeSerial:
         *,
         firmware_version: str = "v1.12.1",
         access_points: tuple[str, ...] = ("[0][CH:6] NULLSQUARE-HIL-AP -42",),
+        stream_lines: dict[str, tuple[str, ...]] | None = None,
         instances: list[AdapterFakeSerial] | None = None,
         **kwargs: Any,
     ) -> None:
         self.is_open = True
         self.writes: list[bytes] = []
         self.access_points = access_points
+        self.stream_lines = stream_lines or {}
+        self._pending_stream = b""
         self._buffer = bytearray(
             (
                 "ESP32 Marauder\r\n"
@@ -33,6 +39,9 @@ class AdapterFakeSerial:
 
     @property
     def in_waiting(self) -> int:
+        if not self._buffer and self._pending_stream:
+            self._buffer.extend(self._pending_stream)
+            self._pending_stream = b""
         return len(self._buffer)
 
     def read(self, size: int = 1) -> bytes:
@@ -46,15 +55,27 @@ class AdapterFakeSerial:
         self.writes.append(data)
         command = data.decode("ascii").rstrip("\n")
         if command == "help":
-            self._respond(command, "sniffbeacon\r\nstopscan [-f]\r\nlist -a")
-        elif command == "clearlist -a":
+            self._respond(
+                command,
+                "scanall\r\nsniffraw\r\nsniffbeacon\r\nsniffprobe\r\n"
+                "sniffdeauth\r\nsniffpmkid [-c <channel>][-d][-l]\r\n"
+                "sniffsae\r\npacketcount\r\nstopscan [-f]\r\nlist -a",
+            )
+        elif command in {"clearlist -a", "clearlist -c"}:
             self._respond(command, "0 selected")
-        elif command == "sniffbeacon":
-            self._respond(command, "StartingBeacon sniff. Stop with stopscan")
+        elif _is_observation_command(command):
+            self._respond(command, f"Starting {command}. Stop with stopscan")
+            lines = self.stream_lines.get(command, ())
+            if lines:
+                self._pending_stream = ("\r\n".join(lines) + "\r\n").encode()
         elif command == "stopscan":
             self._respond(command, "Stopping WiFi tran/recv")
         elif command == "list -a":
             self._respond(command, "\r\n".join(self.access_points))
+        elif command == "list -c":
+            self._respond(command, "[0] AA:BB:CC:DD:EE:FF -> AP 0 -55")
+        elif command == "list -p":
+            self._respond(command, "[0] NULLSQUARE-PROBE")
         return len(data)
 
     def _respond(self, command: str, body: str) -> None:
@@ -67,10 +88,27 @@ class AdapterFakeSerial:
         self._buffer.clear()
 
 
+def _is_observation_command(command: str) -> bool:
+    tokens = command.split()
+    if not tokens:
+        return False
+    return tokens[0] in {
+        "scanall",
+        "sniffraw",
+        "sniffbeacon",
+        "sniffprobe",
+        "sniffdeauth",
+        "sniffpmkid",
+        "sniffsae",
+        "packetcount",
+    } and "-serial" in tokens
+
+
 def factory(
     *,
     firmware_versions: list[str] | None = None,
     access_points: tuple[str, ...] = ("[0][CH:6] NULLSQUARE-HIL-AP -42",),
+    stream_lines: dict[str, tuple[str, ...]] | None = None,
     instances: list[AdapterFakeSerial] | None = None,
 ):
     versions = list(firmware_versions or ["v1.12.1"])
@@ -80,6 +118,7 @@ def factory(
         return AdapterFakeSerial(
             firmware_version=version,
             access_points=access_points,
+            stream_lines=stream_lines,
             instances=instances,
             **kwargs,
         )
@@ -87,13 +126,18 @@ def factory(
     return build
 
 
-def _action(*, action_class: ActionClass = ActionClass.OBSERVE) -> Action:
+def _action(
+    capability_id: str = MARAUDER_WIFI_BEACONS_OBSERVE,
+    *,
+    action_class: ActionClass = ActionClass.OBSERVE,
+    inputs: dict[str, object] | None = None,
+) -> Action:
     return Action(
         action_id="wifi-observe",
-        capability_id=MARAUDER_WIFI_BEACONS_OBSERVE,
+        capability_id=capability_id,
         target_id="lab-target",
         action_class=action_class,
-        inputs={"duration_seconds": 0.05},
+        inputs=inputs or {"duration_seconds": 0.05},
     )
 
 
@@ -107,7 +151,7 @@ def test_unverified_capability_is_not_advertised_or_executable() -> None:
     assert "not hardware-verified" in (result.error or "")
 
 
-def test_verified_override_advertises_only_passive_beacon_capability() -> None:
+def test_verified_override_advertises_only_verified_capabilities() -> None:
     adapter = MarauderAdapter(
         "/dev/fake",
         serial_factory=factory(),
@@ -122,7 +166,22 @@ def test_verified_override_advertises_only_passive_beacon_capability() -> None:
     assert capabilities[0].constraints["receive_only"] is True
 
 
-def test_successful_execution_returns_structured_ap_observation() -> None:
+def test_pmkid_descriptor_explicitly_disables_active_deauthentication() -> None:
+    adapter = MarauderAdapter(
+        "/dev/fake",
+        serial_factory=factory(),
+        verified_capabilities={MARAUDER_WIFI_PMKID_OBSERVE},
+        allow_verification_override=True,
+    )
+
+    capability = adapter.capabilities()[0]
+
+    assert capability.capability_id == MARAUDER_WIFI_PMKID_OBSERVE
+    assert capability.constraints["active_deauthentication"] is False
+    assert capability.quality["contains_authentication_material"] is True
+
+
+def test_successful_beacon_execution_returns_structured_ap_observation() -> None:
     adapter = MarauderAdapter(
         "/dev/fake",
         serial_factory=factory(),
@@ -136,6 +195,70 @@ def test_successful_execution_returns_structured_ap_observation() -> None:
     assert result.normalized["observation_mode"] == "passive-beacon"
     assert result.normalized["access_point_count"] == 1
     assert result.normalized["access_points"][0]["ssid"] == "NULLSQUARE-HIL-AP"
+
+
+def test_environment_scan_returns_ap_and_station_observation_counts() -> None:
+    adapter = MarauderAdapter(
+        "/dev/fake",
+        serial_factory=factory(),
+        verified_capabilities={MARAUDER_WIFI_ENVIRONMENT_SCAN},
+        allow_verification_override=True,
+    )
+
+    result = adapter.execute(_action(MARAUDER_WIFI_ENVIRONMENT_SCAN))
+
+    assert result.status is ExecutionStatus.SUCCESS
+    assert result.normalized["access_point_count"] == 1
+    assert result.normalized["station_line_count"] == 1
+
+
+def test_passive_deauth_observation_records_stream_without_transmitting() -> None:
+    instances: list[AdapterFakeSerial] = []
+    command = "sniffdeauth -serial"
+    adapter = MarauderAdapter(
+        "/dev/fake",
+        serial_factory=factory(
+            stream_lines={command: ("DEAUTH AA:BB:CC:DD:EE:FF",)},
+            instances=instances,
+        ),
+        verified_capabilities={MARAUDER_WIFI_DEAUTH_FRAMES_OBSERVE},
+        allow_verification_override=True,
+    )
+
+    result = adapter.execute(_action(MARAUDER_WIFI_DEAUTH_FRAMES_OBSERVE))
+
+    assert result.status is ExecutionStatus.SUCCESS
+    assert result.normalized["observed_line_count"] == 1
+    assert "only observes deauthentication" in " ".join(result.limitations)
+    writes = [write for instance in instances for write in instance.writes]
+    assert b"sniffdeauth -serial\n" in writes
+    assert not any(b"attack" in write for write in writes)
+
+
+def test_pmkid_observation_accepts_bounded_channel_and_never_uses_dash_d() -> None:
+    instances: list[AdapterFakeSerial] = []
+    command = "sniffpmkid -c 6 -serial"
+    adapter = MarauderAdapter(
+        "/dev/fake",
+        serial_factory=factory(
+            stream_lines={command: ("PMKID material",)},
+            instances=instances,
+        ),
+        verified_capabilities={MARAUDER_WIFI_PMKID_OBSERVE},
+        allow_verification_override=True,
+    )
+
+    result = adapter.execute(
+        _action(
+            MARAUDER_WIFI_PMKID_OBSERVE,
+            inputs={"duration_seconds": 0.05, "channel": 6},
+        )
+    )
+
+    assert result.status is ExecutionStatus.SUCCESS
+    writes = [write for instance in instances for write in instance.writes]
+    assert b"sniffpmkid -c 6 -serial\n" in writes
+    assert not any(b" -d" in write for write in writes)
 
 
 def test_zero_observed_access_points_is_inconclusive_not_success_claim() -> None:
@@ -164,6 +287,22 @@ def test_non_observe_action_class_is_rejected() -> None:
 
     assert result.status is ExecutionStatus.BLOCKED
     assert "must use OBSERVE" in (result.error or "")
+
+
+def test_unknown_input_key_is_rejected_instead_of_ignored() -> None:
+    adapter = MarauderAdapter(
+        "/dev/fake",
+        serial_factory=factory(),
+        verified_capabilities={MARAUDER_WIFI_BEACONS_OBSERVE},
+        allow_verification_override=True,
+    )
+
+    result = adapter.execute(
+        _action(inputs={"duration_seconds": 0.05, "attack": True})
+    )
+
+    assert result.status is ExecutionStatus.BLOCKED
+    assert "Unsupported input" in (result.error or "")
 
 
 def test_firmware_change_between_probe_and_execution_fails_closed() -> None:
