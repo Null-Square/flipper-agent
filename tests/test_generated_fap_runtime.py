@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from hardware_pentest.adapters.flipper.errors import FlipperProtocolError
 from hardware_pentest.core.models import Action, ActionClass, CapabilityMaturity, ExecutionStatus
 from hardware_pentest.synthesis import (
     BuildArtifact,
@@ -18,7 +19,6 @@ from hardware_pentest.synthesis import (
     generated_app_path,
     generated_result_path,
 )
-from hardware_pentest.adapters.flipper.errors import FlipperProtocolError
 
 SAFE_SOURCE = r'''
 #include <furi.h>
@@ -48,6 +48,7 @@ class GeneratedDeviceBackend:
     running_name: str | None = None
     running_ticks: int = 0
     files: dict[str, bytearray] = field(default_factory=dict)
+    directories: set[str] = field(default_factory=set)
     writes: list[bytes] = field(default_factory=list)
     loader_close_count: int = 0
     auto_exit: bool = True
@@ -97,16 +98,26 @@ class GeneratedFakeSerial:
             )
         elif command.startswith("storage stat "):
             path = command.removeprefix("storage stat ")
-            payload = self.backend.files.get(path)
-            body = f"File, size: {len(payload)}b" if payload is not None else "Storage error: Not exist"
+            if path in self.backend.directories:
+                body = "Directory"
+            else:
+                payload = self.backend.files.get(path)
+                body = (
+                    f"File, size: {len(payload)}b"
+                    if payload is not None
+                    else "Storage error: Not exist"
+                )
             self._respond(command, body)
+        elif command.startswith("storage mkdir "):
+            path = command.removeprefix("storage mkdir ")
+            self.backend.directories.add(path)
+            self._respond(command, "")
         elif command.startswith("storage remove "):
             path = command.removeprefix("storage remove ")
             self.backend.files.pop(path, None)
             self._respond(command, "")
         elif command.startswith("storage write chunk "):
-            prefix = "storage write chunk "
-            remainder = command.removeprefix(prefix)
+            remainder = command.removeprefix("storage write chunk ")
             path, size_text = remainder.rsplit(" ", 1)
             self._pending_path = path
             self._pending_size = int(size_text)
@@ -125,24 +136,27 @@ class GeneratedFakeSerial:
             self.backend.running_ticks = 1
             self._respond(command, "")
         elif command == "loader info":
-            if self.backend.running_name is None:
-                self._respond(command, "No application is running")
-            elif not self.backend.auto_exit or self.backend.running_ticks > 0:
-                name = self.backend.running_name
-                if self.backend.auto_exit:
-                    self.backend.running_ticks -= 1
-                self._respond(command, f'Application "{name}" is running')
-            else:
-                self.backend.running_name = None
-                self.backend.files[generated_result_path("hpa_gen_gpio_sample")] = bytearray(
-                    self.backend.prepared_result
-                )
-                self._respond(command, "No application is running")
+            self._loader_info(command)
         elif command == "loader close":
             self.backend.loader_close_count += 1
             self.backend.running_name = None
             self._respond(command, "Application was closed")
         return len(data)
+
+    def _loader_info(self, command: str) -> None:
+        if self.backend.running_name is None:
+            self._respond(command, "No application is running")
+            return
+        if not self.backend.auto_exit or self.backend.running_ticks > 0:
+            name = self.backend.running_name
+            if self.backend.auto_exit:
+                self.backend.running_ticks -= 1
+            self._respond(command, f'Application "{name}" is running')
+            return
+        self.backend.running_name = None
+        result_path = generated_result_path("hpa_gen_gpio_sample")
+        self.backend.files[result_path] = bytearray(self.backend.prepared_result)
+        self._respond(command, "No application is running")
 
     def _respond(self, command: str, body: str) -> None:
         payload = command + "\r\n"
@@ -204,7 +218,9 @@ def approved_action() -> Action:
     )
 
 
-def test_generated_capability_is_ephemeral_implemented_not_hardware_verified(tmp_path: Path) -> None:
+def test_generated_capability_is_ephemeral_implemented_not_hardware_verified(
+    tmp_path: Path,
+) -> None:
     backend = GeneratedDeviceBackend()
     adapter = GeneratedFlipperAdapter(
         "/dev/fake",
@@ -260,14 +276,14 @@ def test_generated_execution_deploys_reads_evidence_and_cleans_up(tmp_path: Path
     assert result.raw["generated_app"]["source_tree_sha256"] == artifact.source_tree_sha256
     assert generated_app_path("hpa_gen_gpio_sample") not in backend.files
     assert generated_result_path("hpa_gen_gpio_sample") not in backend.files
-    writes = backend.writes
+    assert b"storage mkdir /ext/apps/NullSquare\r" in backend.writes
     assert any(
         item.startswith(
             f"storage write chunk {generated_app_path('hpa_gen_gpio_sample')} ".encode()
         )
-        for item in writes
+        for item in backend.writes
     )
-    assert not any(b"/ext/apps/GPIO/" in item for item in writes)
+    assert not any(b"/ext/apps/GPIO/" in item for item in backend.writes)
 
 
 def test_generated_runtime_clears_stale_result_before_launch(tmp_path: Path) -> None:
@@ -285,7 +301,8 @@ def test_generated_runtime_clears_stale_result_before_launch(tmp_path: Path) -> 
 
     assert result.status is ExecutionStatus.SUCCESS
     remove_command = f"storage remove {result_path}\r".encode()
-    launch_command = f'loader open "{generated_app_path("hpa_gen_gpio_sample")}"\r'.encode()
+    app_path = generated_app_path("hpa_gen_gpio_sample")
+    launch_command = f'loader open "{app_path}"\r'.encode()
     assert backend.writes.index(remove_command) < backend.writes.index(launch_command)
 
 
@@ -323,9 +340,9 @@ def test_generated_runtime_refuses_to_interrupt_other_running_app(tmp_path: Path
     assert not any(item.startswith(b"storage write chunk") for item in backend.writes)
 
 
-def test_generated_runtime_timeout_closes_only_generated_app(tmp_path: Path) -> None:
+def test_generated_runtime_timeout_closes_and_removes_generated_app(tmp_path: Path) -> None:
     backend = GeneratedDeviceBackend(auto_exit=False)
-    ticks = iter((0.0, 0.0, 2.1, 2.1))
+    ticks = iter((0.0, 0.0, 2.1))
     adapter = GeneratedFlipperAdapter(
         "/dev/fake",
         manifest=manifest(runtime_seconds=1.0),
@@ -340,10 +357,13 @@ def test_generated_runtime_timeout_closes_only_generated_app(tmp_path: Path) -> 
     assert result.status is ExecutionStatus.FAILED
     assert "runtime bound" in (result.error or "")
     assert backend.loader_close_count == 1
+    assert generated_app_path("hpa_gen_gpio_sample") not in backend.files
 
 
-def test_malformed_generated_result_fails_without_promoting_observation(tmp_path: Path) -> None:
-    backend = GeneratedDeviceBackend(prepared_result=b'{"schema_version":"1","status":"success"}')
+def test_malformed_result_fails_and_generated_files_are_cleaned(tmp_path: Path) -> None:
+    backend = GeneratedDeviceBackend(
+        prepared_result=b'{"schema_version":"1","status":"success"}'
+    )
     adapter = GeneratedFlipperAdapter(
         "/dev/fake",
         manifest=manifest(),
@@ -356,6 +376,8 @@ def test_malformed_generated_result_fails_without_promoting_observation(tmp_path
     assert result.status is ExecutionStatus.FAILED
     assert "observations" in (result.error or "")
     assert result.normalized == {}
+    assert generated_app_path("hpa_gen_gpio_sample") not in backend.files
+    assert generated_result_path("hpa_gen_gpio_sample") not in backend.files
 
 
 def test_generated_path_helpers_reject_arbitrary_app_ids() -> None:
