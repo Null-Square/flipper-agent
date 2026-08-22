@@ -19,17 +19,20 @@ from hardware_pentest.synthesis import (
     UfbTBuilder,
 )
 
-SAFE_GPIO_SOURCE = """
+SAFE_GPIO_SOURCE = r'''
 #include <furi.h>
 #include <furi_hal_gpio.h>
+#include "hpa_runtime.h"
 
 int32_t hpa_generated_main(void* context) {
     UNUSED(context);
     bool value = furi_hal_gpio_read(&gpio_ext_pa7);
-    FURI_LOG_I("HPA", "PA7=%d", value);
-    return 0;
+    const char* result = value
+        ? "{\"schema_version\":\"1\",\"status\":\"success\",\"observations\":{\"PA7\":1}}"
+        : "{\"schema_version\":\"1\",\"status\":\"success\",\"observations\":{\"PA7\":0}}";
+    return hpa_write_evidence_json(result) ? 0 : 1;
 }
-""".strip()
+'''.strip()
 
 
 def _request(*, action_class: ActionClass = ActionClass.OBSERVE):
@@ -63,6 +66,30 @@ def test_safe_read_only_generated_source_is_allowed() -> None:
     assert decision.allowed is True
     assert decision.errors == ()
     assert decision.inferred_interfaces == ("gpio",)
+
+
+def test_generated_source_requires_bounded_evidence_writer() -> None:
+    source = SAFE_GPIO_SOURCE.replace(
+        "return hpa_write_evidence_json(result) ? 0 : 1;",
+        "return 0;",
+    )
+
+    decision = GeneratedSourcePolicy().evaluate(_request(), _manifest(), source)
+
+    assert decision.allowed is False
+    assert any(item.rule_id == "source.no_evidence_writer" for item in decision.errors)
+
+
+def test_generated_source_rejects_direct_storage_write() -> None:
+    source = SAFE_GPIO_SOURCE + "\nvoid write_any(File* f) { storage_file_write(f, 0, 0); }"
+
+    decision = GeneratedSourcePolicy().evaluate(_request(), _manifest(), source)
+
+    assert decision.allowed is False
+    assert any(
+        item.rule_id == "source.prohibited_api" and item.token == "storage_file_write"
+        for item in decision.errors
+    )
 
 
 def test_generated_source_rejects_undeclared_hardware_interface() -> None:
@@ -123,6 +150,10 @@ def test_project_writer_creates_external_fap_project_with_hashes(tmp_path: Path)
     assert "FlipperAppType.EXTERNAL" in fam
     assert 'fap_category="NullSquare"' in fam
     assert 'targets=["f7"]' in fam
+    assert {path.name for path in project.support_paths} == {"hpa_runtime.c", "hpa_runtime.h"}
+    runtime_source = (project.root / "hpa_runtime.c").read_text(encoding="utf-8")
+    assert 'APP_DATA_PATH("result.json")' in runtime_source
+    assert "HPA_EVIDENCE_MAX_BYTES 4096" in runtime_source
     assert project.source_sha256 == hashlib.sha256(project.source_path.read_bytes()).hexdigest()
     assert project.app_manifest_sha256 == hashlib.sha256(
         project.app_manifest_path.read_bytes()
@@ -168,6 +199,7 @@ def test_ufbt_builder_uses_fixed_non_shell_command_and_records_provenance(tmp_pa
     assert artifact.builder_version == "ufbt 0.2-test"
     assert artifact.artifact_sha256 == hashlib.sha256(b"compiled-fap").hexdigest()
     assert artifact.source_sha256 == project.source_sha256
+    assert artifact.source_tree_sha256 == project.source_tree_sha256
     assert artifact.app_manifest_sha256 == project.app_manifest_sha256
     assert artifact.build_command == ("ufbt",)
     assert artifact.build_log_path.is_file()
@@ -185,6 +217,18 @@ def test_builder_rejects_source_changed_after_policy_review(tmp_path: Path) -> N
         raise AssertionError("tampered project must never reach uFBT")
 
     with pytest.raises(GeneratedAppBuildError, match="source changed"):
+        UfbTBuilder(runner=forbidden_runner).build(project)
+
+
+def test_builder_rejects_trusted_support_runtime_tampering(tmp_path: Path) -> None:
+    project = GeneratedProjectWriter(tmp_path).write(_manifest(), SAFE_GPIO_SOURCE)
+    support = project.root / "hpa_runtime.c"
+    support.write_text(support.read_text(encoding="utf-8") + "\n// tampered\n", encoding="utf-8")
+
+    def forbidden_runner(*args, **kwargs):
+        raise AssertionError("tampered support runtime must never reach uFBT")
+
+    with pytest.raises(GeneratedAppBuildError, match="source tree changed"):
         UfbTBuilder(runner=forbidden_runner).build(project)
 
 
