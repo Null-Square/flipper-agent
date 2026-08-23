@@ -80,7 +80,11 @@ def test_candidate_surface_exposes_input_keys_not_action_values(tmp_path: Path) 
     )
 
     candidates = planner.candidates(state.assessment_id)
-    gpio = next(item for item in candidates["candidates"] if item["test_case_id"].endswith("gpio.inspect.v1"))
+    gpio = next(
+        item
+        for item in candidates["candidates"]
+        if item["test_case_id"].endswith("gpio.inspect.v1")
+    )
 
     assert gpio["input_keys"] == ["pin"]
     assert "PA7" not in repr(gpio)
