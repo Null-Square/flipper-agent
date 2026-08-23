@@ -141,6 +141,8 @@ def test_uart_gap_produces_deterministic_flipper_candidate_work_order() -> None:
     second = planner.create(state, state.steps[0].step_id).to_dict()
 
     assert first == second
+    assert first["work_order_id"] == second["work_order_id"]
+    assert first["work_order_id"].startswith("work-order:")
     assert first["state"] == SynthesisWorkOrderState.GENERATE_CANDIDATE.value
     request = first["request"]
     assert request["capability_id"] == "internal.uart.autodetect"
