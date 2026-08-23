@@ -2,206 +2,351 @@
 
 ## Decision
 
-Hardware Pentest Agent is a vendor-neutral execution runtime for authorized hardware and embedded security assessments.
+Hardware Pentest Agent is a harness-neutral, vendor-neutral runtime for authorized hardware and embedded security assessments.
 
-The runtime must separate pentest intent from device-specific commands.
+Its core job is not to expose device commands. Its job is to translate a security question into a reproducible physical experiment using the best available hardware implementation.
 
-Flipper Zero is the first adapter. It must not define the core API.
+Flipper Zero is the first reference hardware provider. It must not define the core API.
+
+## Architectural principle
+
+```text
+security question
+      |
+      v
+capability need
+      |
+      +--> verified implementation exists -> reuse
+      |
+      +--> primitives can compose it ------> compose
+      |
+      +--> mature specialist tool exists --> route
+      |
+      +--> implementation missing ---------> synthesize
+                                                |
+                                                v
+                                      choose hardware provider
+                                                |
+                                      build / deploy / execute
+                                                |
+                                                v
+                                             evidence
+```
+
+The product should therefore own **domain intelligence and physical execution state**, while borrowing generic LLM orchestration from Codex, Null-AI or another outer harness when convenient.
 
 ## Goals
 
 The architecture must support these behaviors:
 
-- represent an engagement and target explicitly;
+- represent engagement, target and target components explicitly;
+- discover connected hardware providers and physical resources;
 - select applicable hardware/embedded tests;
-- discover connected instruments and their capabilities;
-- route a capability request to an appropriate instrument;
-- validate scope, action risk, and physical constraints before execution;
-- pause for a human physical action or approval when required;
-- retain raw evidence and normalized observations;
-- promote only supported observations to findings;
-- expose the runtime through Python, CLI, MCP, and later Null-AI integration;
-- add a second instrument without changing assessment logic.
+- resolve a capability need to a verified implementation;
+- compose lower-level primitives where useful;
+- synthesize a new implementation when no route exists;
+- choose a board/tool based on physical, timing and toolchain requirements;
+- build and deploy board-specific artifacts without leaking toolchain details into assessment logic;
+- validate scope, action risk and physical constraints before execution;
+- persist target, assessment, implementation and evidence state independently of model context;
+- expose the same domain through Python, CLI and MCP;
+- add new boards/tools without changing TestCase semantics.
 
 ## Non-goals
 
 The core runtime must not:
 
-- reimplement specialist hardware tools when a stable automation surface exists;
-- give an LLM arbitrary shell or serial access as the normal execution path;
+- become a generic LLM agent harness;
 - make MCP the internal architecture;
-- encode Flipper-specific command names in assessment logic;
+- encode vendor command syntax in assessment logic;
+- require every capability to be hard-coded in advance;
+- generate firmware when a verified/composed/external implementation already fits;
+- treat compilation success as proof that a physical capability works;
 - infer authorization from a prompt;
-- treat every anomaly as a vulnerability;
-- assume physical setup is safe without validation.
+- treat every anomaly as a finding.
 
 ## System layers
 
 ```text
-+---------------------------------------------------------+
-|                    Security Agent                       |
-| planner / evaluator / future Null-AI integration        |
-+---------------------------+-----------------------------+
-                            |
-                            v
-+---------------------------------------------------------+
-|                 Assessment Runtime                      |
-| target model | test selection | state | jobs            |
-+---------------------------+-----------------------------+
-                            |
-                            v
-+---------------------------------------------------------+
-|                 Capability Runtime                      |
-| registry | discovery | routing | typed actions          |
-+---------------------------+-----------------------------+
-                            |
-              +-------------+-------------+
-              |                           |
-              v                           v
-+-------------------------+   +---------------------------+
-| Policy & Constraints    |   | Evidence & Findings       |
-| scope | risk | approval |   | artifacts | provenance    |
-| physical limits         |   | observations | findings   |
-+------------+------------+   +-------------+-------------+
-             |                              ^
-             +---------------+--------------+
-                             |
-                             v
-+---------------------------------------------------------+
-|                  Instrument Adapters                    |
-| Flipper | Proxmark | sigrok | OpenOCD | HackRF | ...    |
-+---------------------------------------------------------+
++--------------------------------------------------------------+
+|                     Outer Agent Harness                      |
+| Codex / Null-AI / other MCP client                           |
+| model inference | conversation | generic tool loop           |
++-----------------------------+--------------------------------+
+                              |
+                              v
++--------------------------------------------------------------+
+|                Harness-Neutral Service Boundary              |
+| Python service | CLI | MCP                                   |
++-----------------------------+--------------------------------+
+                              |
+                              v
++--------------------------------------------------------------+
+|                    Assessment Runtime                        |
+| engagement | target/component graph | TestCases | state      |
++-----------------------------+--------------------------------+
+                              |
+                              v
++--------------------------------------------------------------+
+|                  Capability Resolution                       |
+| registry | graph | reuse | compose | synthesize | routing     |
++-----------------------------+--------------------------------+
+                              |
+            +-----------------+------------------+
+            |                                    |
+            v                                    v
++--------------------------+        +---------------------------+
+| Policy / Physical Gates  |        | Evidence / Verification   |
+| scope | action class     |        | artifacts | hashes        |
+| operator state           |        | observations | findings   |
++------------+-------------+        +-------------+-------------+
+             |                                      ^
+             +-------------------+------------------+
+                                 |
+                                 v
++--------------------------------------------------------------+
+|              Hardware / Implementation Runtime               |
+| descriptors | adapters | synthesis | build | deploy          |
++-----------------------------+--------------------------------+
+                              |
+      +-----------------------+-----------------------------+
+      |                       |                             |
+      v                       v                             v
+ Flipper provider       programmable boards         specialist tools
+ FAP / RPC / CLI        ESP32/RP2040/STM32          Proxmark/sigrok/
+                                                     OpenOCD/SDR/...
 ```
 
 ## Core domain objects
 
 ### Engagement
 
-Defines the authorized assessment context.
-
-Required fields include:
-
-- `engagement_id`;
-- target references;
-- valid time window;
-- allowed capability families;
-- denied capability families;
-- maximum action class;
-- operator/approval requirements;
-- notes about legal or environmental constraints.
-
-An engagement record is a technical policy input. It is not proof of legal authorization.
+Defines the authorized technical assessment context: targets, time window, capability policy, action-class ceiling and operator requirements.
 
 ### Target
 
-Represents the device or system under test.
+The system being assessed. A target may be a camera, drone, router, lock, vehicle controller, board or larger embedded product.
 
-A target can include:
+### TargetComponent
 
-- manufacturer/model;
-- hardware revision;
-- firmware version;
-- known interfaces;
-- expected wireless technologies;
-- physical access level;
-- test notes;
-- discovered components.
+A logical/physical part discovered within a target, such as:
 
-The target model should evolve as evidence is collected.
+- flight controller;
+- radio module;
+- SPI flash;
+- debug header;
+- Wi-Fi subsystem;
+- companion computer;
+- removable storage.
 
-### Instrument
+The component graph should evolve as evidence is collected.
 
-Represents a connected tool.
+### HardwareProvider
+
+A controllable physical resource available to the runtime.
 
 Examples:
 
 - Flipper Zero;
+- ESP32/RP2040/STM32 development boards;
 - Proxmark3;
-- Saleae-compatible logic analyzer;
-- sigrok-supported device;
-- OpenOCD-supported debug probe;
-- HackRF-class SDR.
+- logic analyzers;
+- debug probes;
+- SDRs;
+- Linux SBCs.
 
-An instrument advertises capabilities. It does not define assessment intent.
+A provider may expose prebuilt capabilities, programmable resources, or both.
+
+### HardwareDescriptor
+
+A normalized description of what a provider can physically and computationally do.
+
+It should eventually cover:
+
+- identity/revision/architecture;
+- GPIO/electrical domain;
+- buses and radios;
+- timers/ADC/DAC/DMA/PIO where relevant;
+- debug/programming interfaces;
+- installed runtime/firmware state;
+- build toolchains;
+- artifact types;
+- deployment/recovery methods;
+- evidence channels;
+- verified limitations.
+
+See `PROGRAMMABLE_HARDWARE.md`.
 
 ### Capability
 
-A stable, vendor-neutral operation that the runtime can request.
+A stable, vendor-neutral physical/security operation.
 
 Examples:
 
 - `wireless.nfc.identify`;
-- `wireless.subghz.observe`;
 - `internal.uart.observe`;
-- `debug.jtag.detect`;
+- `internal.uart.autodetect`;
+- `internal.spi.capture`;
+- `debug.swd.detect`;
+- `firmware.extract`;
 - `protocol.decode`.
 
-See `CAPABILITY_MODEL.md`.
+A capability is not synonymous with a device API call.
+
+### CapabilityImplementation
+
+A concrete way to satisfy a capability on one or more compatible providers.
+
+An implementation can be:
+
+- built into an adapter;
+- composed from primitives;
+- delegated to an external specialist tool;
+- generated host software;
+- synthesized firmware/app.
+
+It should carry compatibility, provenance, maturity, evidence schema and limitations.
+
+### CapabilitySynthesisRequest
+
+A hardware-neutral request to create a missing implementation. It should specify physical requirements and expected evidence before a toolchain/backend is chosen.
 
 ### TestCase
 
-Represents the security question being tested.
-
-A test case declares:
-
-- purpose;
-- target component;
-- prerequisites;
-- required capabilities;
-- expected evidence;
-- stop conditions;
-- success/inconclusive/failure conditions;
-- optional mappings to OWASP ISTG or other references.
+A security question with purpose, prerequisites, required capability, evidence expectations, stop conditions and result interpretation rules.
 
 ### Action
 
-A concrete execution request produced from a capability.
+A concrete execution request derived from a TestCase and capability implementation.
 
-An action is typed and validated before it reaches an adapter.
+### Evidence / Observation / Finding
 
-### Evidence
+Evidence is the raw or normalized physical result. An Observation is directly supported by evidence. A Finding is a security conclusion supported by observations/evidence.
 
-Raw or normalized output produced by an action.
+## Target and provider roles
 
-Evidence must preserve provenance.
+A device can be a target, provider, or both, but those roles must remain explicit.
 
-### Observation
+Example: an RP2040 board connected as a logic/timing helper is a provider. An RP2040 board being assessed is a target. If an authorized debug/bootloader path allows a temporary diagnostic payload on the target, the runtime may model it as a target-provider hybrid for that bounded operation.
 
-A statement directly supported by evidence.
+Control of a target does not automatically grant provider status.
 
-Example:
+## Capability resolution
 
-> The target presented an ISO/IEC 14443-A compatible NFC interface during the observation window.
+Resolution should occur in this order:
 
-### Finding
+1. Find verified implementations for the required capability.
+2. Check whether verified lower-level primitives can compose it.
+3. Check whether an external specialist provider is available.
+4. Consider host-side generation.
+5. Consider firmware/app synthesis on compatible providers.
+6. If no provider can satisfy the physical requirements, return a hardware requirement instead of inventing an implementation.
 
-A security conclusion supported by one or more observations.
+Ranking can later include:
 
-A finding must state evidence, impact, limits, and remediation.
+- evidence fidelity;
+- timing/bandwidth fit;
+- hardware verification confidence;
+- setup cost;
+- destructive risk;
+- runtime duration;
+- operator effort.
+
+## Provider contract
+
+Existing adapters implement a stable execution contract. The architecture should extend that with provider/descriptor discovery rather than replace it.
+
+Conceptually:
+
+```python
+class HardwareProvider(Protocol):
+    def probe(self) -> HardwareIdentity: ...
+    def describe(self) -> HardwareDescriptor: ...
+    def implementations(self) -> list[CapabilityImplementation]: ...
+```
+
+Existing `InstrumentAdapter` execution contracts remain useful for already-implemented capabilities.
+
+## Synthesis backend contracts
+
+Synthesis should be split into reusable contracts:
+
+```text
+CapabilitySynthesisRequest
+        |
+        v
+SynthesisResolver
+        |
+        v
+CapabilitySynthesisBackend
+        |
+        +--> BuildProvider
+        +--> DeploymentProvider
+        +--> EvidenceChannel
+```
+
+Examples:
+
+- Flipper -> FAP / uFBT -> storage/loader or RPC;
+- ESP32 -> ESP-IDF/PlatformIO -> esptool;
+- RP2040 -> Pico SDK/PIO -> UF2;
+- STM32 -> STM32/Zephyr -> DFU/OpenOCD;
+- logic analysis -> generated sigrok decoder;
+- Linux SBC -> bounded process/container.
+
+Assessment code must never construct those vendor-specific commands directly.
+
+## Flipper reference provider
+
+Flipper remains provider #1 and currently demonstrates:
+
+- physical discovery/identity;
+- typed CLI operations;
+- native IR/Sub-GHz/NFC/GPIO capabilities;
+- external app transfer/loader lifecycle;
+- ESP32 Marauder composite operation;
+- generated FAP review/build/deploy/execute/evidence;
+- hardware verification and transcript replay.
+
+Structured Flipper protobuf RPC should be added where it improves reliability or transport flexibility, but RPC remains an implementation detail below the capability layer.
+
+## Executable capability memory
+
+A synthesized implementation that is validated on hardware should be persistable and rediscoverable.
+
+Store at least:
+
+```text
+capability ID
+synthesis request
+source/artifact hashes
+compatible hardware descriptor constraints
+toolchain/version constraints
+evidence schema
+known limitations
+HIL verification records
+assessment usage history
+```
+
+This makes the runtime's competence cumulative across model sessions and outer harnesses.
 
 ## Assessment state machine
 
+Persistent assessment state remains independent of LLM memory.
+
 ```text
-CREATED
-  |
-  v
-MODELED
-  |
-  v
 PLANNED
   |
-  v
-READY
+  +--> capability available ----------------------> READY
+  |
+  +--> capability missing but synthesizable ------> SYNTHESIS_REQUIRED
+  |                                                    |
+  |                                              implementation
+  |                                                    |
+  +----------------------------------------------------+
   |
   +--> HUMAN_ACTION_REQUIRED
-  |           |
-  |           v
-  |         READY
-  |
   +--> APPROVAL_REQUIRED
-  |           |
-  |           v
-  |         READY
   |
   v
 RUNNING
@@ -209,149 +354,84 @@ RUNNING
   +--> BLOCKED
   +--> INCONCLUSIVE
   +--> FAILED
-  +--> COMPLETED
+  +--> SUCCESS
 ```
 
-The runtime must persist state transitions. It must not rely on LLM conversation memory as the assessment record.
+`SYNTHESIS_REQUIRED` is a planned architectural state; current planning still needs this integration.
 
-## Capability routing
+## Human/physical actions
 
-The router receives a capability request and a target context.
-
-It performs these steps:
-
-1. Find connected instruments that advertise the capability.
-2. Remove instruments that cannot satisfy required constraints.
-3. Apply engagement policy.
-4. Rank viable instruments.
-5. Return the selected route and rationale.
-6. Require approval if policy requires it.
-7. Execute through the selected adapter.
-
-Initial routing can use deterministic priorities. Later versions can use richer cost, confidence, fidelity, and risk scores.
-
-## Adapter contract
-
-Every instrument adapter must implement a small stable contract:
-
-```python
-class InstrumentAdapter(Protocol):
-    def probe(self) -> InstrumentIdentity: ...
-    def capabilities(self) -> list[CapabilityDescriptor]: ...
-    def validate(self, action: Action) -> ValidationResult: ...
-    def execute(self, action: Action) -> ExecutionResult: ...
-```
-
-The adapter may internally use a CLI, RPC protocol, local API, daemon, or vendor SDK.
-
-The core runtime must not depend on those details.
-
-## Flipper adapter
-
-The first Flipper transport is USB.
-
-The adapter may use documented Flipper control surfaces such as the CLI and protobuf RPC. The implementation must prefer structured RPC where practical and use CLI only behind typed adapter operations.
-
-The first adapter must support:
-
-- device discovery and identity;
-- capability registration;
-- connection health;
-- normalized execution results;
-- timeout/cancellation behavior;
-- deterministic error mapping;
-- evidence collection;
-- safe recovery after failed actions.
-
-## Human action model
-
-Some hardware steps need physical work.
-
-Represent them explicitly:
-
-```text
-HumanAction
-- instruction
-- reason
-- required confirmation
-- safety checks
-- expected resulting state
-```
-
-The runtime must stop until the operator confirms the required state.
-
-Examples include probe placement, voltage measurement, enclosure access, and target power cycling.
+Hardware work often requires enclosure opening, ground identification, voltage measurement, probe placement, boot-mode changes or cable movement. These are durable domain states, not conversational reminders.
 
 ## Evidence architecture
 
-Each execution event must link:
+Each physical experiment should link:
 
 ```text
 Engagement
-  -> Target
-  -> TestCase
-  -> Capability
-  -> Action
-  -> Instrument
-  -> Adapter version
-  -> Raw artifact/output
-  -> Observation
+ -> Target / TargetComponent
+ -> TestCase
+ -> Capability
+ -> CapabilityImplementation
+ -> HardwareProvider + descriptor snapshot
+ -> Build/deployment provenance where applicable
+ -> Action
+ -> Raw artifact/output
+ -> Observation
+ -> Finding only if supported
 ```
 
-Artifacts should be content-addressed or hashed when practical.
+## Harness boundary
 
-The first implementation can use local files plus JSON metadata. Storage must remain replaceable so Null-AI can later use its own evidence store.
+Outer harnesses may:
 
-## Agent boundary
+- reason over assessment context;
+- choose among candidate tests;
+- propose hypotheses;
+- ask for capability synthesis;
+- generate implementation source when invited by the synthesis backend;
+- interpret observations and propose follow-up work.
 
-The agent may:
+The runtime owns:
 
-- build a target model from confirmed information;
-- propose a test plan;
-- choose among allowed test cases;
-- interpret normalized observations;
-- propose follow-up tests;
-- draft findings.
+- target/component state;
+- hardware descriptors and implementation registry;
+- methodology/TestCases;
+- synthesis/build/deployment provenance;
+- physical execution state;
+- evidence and verification;
+- resumable assessment state.
 
-The agent must not:
-
-- bypass scope enforcement;
-- send raw arbitrary commands to an instrument through the normal path;
-- override physical constraints;
-- silently approve actions that require an operator;
-- promote unsupported hypotheses to confirmed findings.
+This lets Codex remain useful indefinitely without making Codex itself part of the product architecture.
 
 ## MCP boundary
 
-MCP exposes the runtime to external agents.
+MCP exposes high-level domain operations. It should evolve around concepts such as:
 
-The initial MCP surface should remain small:
+```text
+hardware.discover
+hardware.describe
+capability.search
+capability.implementations
+assessment.create
+assessment.context
+assessment.candidates
+assessment.execute_next
+synthesis.propose
+synthesis.status
+evidence.get
+```
 
-- `hardware_status`;
-- `hardware_instruments`;
-- `hardware_capabilities`;
-- `assessment_create`;
-- `assessment_plan`;
-- `assessment_next_step`;
-- `assessment_execute_step`;
-- `assessment_evidence`;
-- `assessment_report`.
-
-Raw Flipper command passthrough is not part of the normal MCP contract.
-
-## Null-AI integration
-
-Do not merge the repositories during the MVP.
-
-The runtime must first prove:
-
-1. a real Flipper assessment;
-2. deterministic policy enforcement;
-3. evidence provenance;
-4. a second instrument using the same capability API.
-
-After that, Null-AI can consume this runtime as a package, local service, MCP provider, or native tool provider.
+The MCP tool list should not grow into a mirror of every vendor command.
 
 ## Definition of architectural success
 
-The architecture is valid when the same test case can run against a simulator, Flipper adapter, or second suitable instrument without changing the assessment planner or domain model.
+The architecture is successful when all of the following are true:
+
+1. The same security TestCase can route to different hardware providers without changing assessment logic.
+2. A missing physical capability can be synthesized for a compatible provider and returned as normal evidence.
+3. A later assessment can reuse the verified synthesized implementation.
+4. A complex target such as a camera or drone can be represented as components and assessed across multiple providers.
+5. Codex, Null-AI or another outer harness can drive the same durable domain without changing hardware semantics.
+
+The most important proof is therefore not the number of predefined Flipper tools. It is a successful real assessment where the agent encounters a capability gap, creates the missing physical implementation, validates it, and continues.
