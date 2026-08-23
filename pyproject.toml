@@ -34,6 +34,7 @@ hardware-pentest-preflight = "hardware_pentest.interfaces.preflight_cli:main"
 hardware-pentest-wifi-setup = "hardware_pentest.interfaces.wifi_setup_cli:main"
 hardware-pentest-mcp = "hardware_pentest.interfaces.mcp_server:main"
 hardware-pentest-operator = "hardware_pentest.interfaces.operator_cli:main"
+hardware-pentest-implementation-hil = "hardware_pentest.interfaces.implementation_hil_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/hardware_pentest"]
