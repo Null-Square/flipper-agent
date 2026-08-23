@@ -1,58 +1,63 @@
-# Flipper-First MVP
+# Flipper-First Reference MVP
 
-## Decision
+## Purpose
 
-The first MVP proves the agent-to-physical-instrument loop with a USB-connected Flipper Zero.
+The first MVP is a **reference-provider certification**, not the final product boundary.
 
-The MVP is passive-first and non-destructive.
+It proves that Hardware Pentest Agent can connect an outer agent harness to real physical hardware through durable target state, capability routing, execution, evidence and hardware verification.
 
-It does not attempt to cover all IoT pentesting.
+Flipper Zero is used first because it exposes several useful physical interfaces and supports external FAP applications. The broader programmable-hardware architecture is defined in `PROGRAMMABLE_HARDWARE.md`.
 
-## Problem
+## What the MVP must prove
 
-Flipper Zero exposes several hardware security capabilities, but current integrations usually present device commands directly to a user or agent.
+Given an authorized target definition and a connected Flipper Zero, with the Marauder board when Wi-Fi is needed, the runtime must:
 
-That does not solve the larger problem of safe, reproducible hardware assessment.
+1. discover and identify the physical stack;
+2. expose only currently usable implementations;
+3. load durable engagement scope;
+4. create a deterministic assessment from versioned TestCases;
+5. execute bounded steps through the normal policy/evidence runtime;
+6. pause cleanly for operator physical actions or approvals;
+7. preserve evidence and provenance;
+8. recover/resume without relying on model conversation history;
+9. support an external harness through Python/MCP/CLI;
+10. prove selected capabilities on real hardware rather than mocks alone.
 
-The MVP must prove that an assessment engine can use one physical instrument through a vendor-neutral capability model while preserving scope, policy, evidence, and assessment state.
+## Reference capability slice
 
-## User
+The native Flipper reference set currently targets:
 
-Primary users:
+- `infrared.observe`;
+- `wireless.subghz.observe`;
+- `wireless.nfc.identify`;
+- `internal.gpio.inspect`.
 
-- authorized hardware and IoT pentesters;
-- security researchers working in controlled labs;
-- NullSquare engineers developing the future hardware execution layer for Null-AI.
+The Flipper + ESP32 Marauder composite adds a Wi-Fi reference slice including passive environment/frame observations and explicitly modeled approved network-discovery operations.
 
-## MVP outcome
+A capability is not considered working merely because its adapter code exists. Real release claims require appropriate hardware-verification records.
 
-Given an authorized target definition and a USB-connected Flipper Zero, the system must:
+## Capability maturity
 
-1. detect the Flipper;
-2. identify the device and transport state;
-3. register only hardware-verified capabilities;
-4. load an engagement scope;
-5. create or update a target model;
-6. generate a passive-first assessment plan;
-7. execute allowed bounded steps;
-8. pause for required physical setup or approval;
-9. block disallowed steps below the LLM layer;
-10. preserve evidence and execution metadata;
-11. produce observations and an assessment report;
-12. mark unsupported or ambiguous results as inconclusive.
+Use these states consistently:
 
-## Required vertical slice
+- `declared` — modeled but not implemented;
+- `simulated` — deterministic simulator works;
+- `implemented` — an implementation path exists;
+- `hardware_verified` — validated on real hardware under the verification contract;
+- `assessment_verified` — used successfully inside an end-to-end assessment.
 
-The MVP must implement one complete path:
+Generated artifacts have build/provenance state in addition to capability maturity. Compilation does not imply hardware verification.
+
+## Assessment vertical slice
 
 ```text
-Engagement
+Persisted Engagement
   -> Target
-  -> Flipper discovery
-  -> Capability registry
-  -> Test selection
-  -> Plan
-  -> Policy check
+  -> Hardware discovery
+  -> Capability implementations
+  -> TestCase selection
+  -> Deterministic plan
+  -> Physical/policy gates
   -> Execution
   -> Evidence
   -> Observation
@@ -61,279 +66,144 @@ Engagement
 
 A feature is not complete if it exists only as an isolated Flipper command.
 
-## Supported transport
+## Harness-neutral requirement
 
-### Required
+The MVP is now expected to work behind the framework-free service layer and MCP interface.
 
-- USB connection to Flipper Zero.
+An external harness should be able to:
 
-### Deferred
+- list persisted engagements/assessments;
+- obtain compact durable assessment context;
+- obtain deterministic candidate tests and methodology semantics;
+- create an assessment from persisted scope;
+- execute at most one step at a time;
+- observe when a local operator gate is required;
+- resume later without depending on prior model conversation.
 
-- Bluetooth Low Energy (BLE);
-- Wi-Fi Dev Board transport;
-- remote relays.
+The outer harness does not define TestCases, capability action classes or hardware-verification state.
 
-The transport interface must remain replaceable.
-
-## Required capability families
-
-The initial v0.1 Flipper implementation targets four distinct hardware families:
-
-- `infrared.observe`;
-- `wireless.subghz.observe`;
-- `wireless.nfc.identify`;
-- `internal.gpio.inspect`.
-
-These four exercise different physical semantics: passive optical reception, passive RF reception, non-destructive NFC interaction, and human-prepared wired input inspection.
-
-Future Flipper families can include LF RFID and UART only after their data-handling and physical-safety contracts are modeled explicitly.
-
-Do not claim a capability until the adapter proves it on real hardware and the verification record remains valid for the current instrument, firmware, and adapter version.
-
-## Capability maturity states
-
-Each capability has one state:
-
-- `declared` - modeled but not implemented;
-- `simulated` - deterministic simulator works;
-- `implemented` - adapter path exists;
-- `hardware_verified` - validated on real hardware;
-- `assessment_verified` - used successfully in an end-to-end test case.
-
-Only `hardware_verified` and `assessment_verified` capabilities may be presented as working in release documentation.
-
-## Test cases
-
-The first test catalog should be small.
-
-Each test case must declare:
-
-- target component;
-- purpose;
-- prerequisites;
-- required capability;
-- action class;
-- expected evidence;
-- stop conditions;
-- result rules;
-- optional OWASP ISTG mapping.
+## Physical test cases
 
 ### Observe infrared activity
 
-Goal: record decoded or raw infrared observations from a lab-owned source.
+Bounded receive-only evidence from a lab-owned source.
 
-Default action class: `OBSERVE`.
+### Observe approved Sub-GHz activity
 
-The capability never transmits or replays an infrared signal.
-
-### Observe Sub-GHz activity
-
-Goal: record scoped, receive-only observations at an approved frequency.
-
-Default action class: `OBSERVE`.
-
-The MVP does not replay, jam, brute-force, or transmit captured signals.
+Bounded receive-only evidence at an approved frequency.
 
 ### Identify an NFC interface
 
-Goal: determine whether an authorized target presents a detectable NFC protocol family and record only the protocol hierarchy needed for identification.
-
-Default action class: `INTERACT`.
-
-The reader must energize/query a tag to identify its protocol, so this is deliberately not mislabeled as passive observation. The MVP does not extract application data, write, clone, emulate, or attack keys.
+Bounded protocol-family identification. Because the reader energizes/queries a tag, this is modeled as `INTERACT` rather than falsely calling it passive.
 
 ### Inspect a prepared GPIO input
 
-Goal: read one digital level from a supported non-debug external header pin after operator safety checks.
+Read one supported prepared digital input after the operator completes required electrical setup.
 
-Default action class: `OBSERVE` with `requires_human_action=true`.
+### Marauder Wi-Fi reference tests
 
-The operator must configure the chosen pin as input before connecting the target, confirm common ground, and confirm the signal voltage is safe. The assessment action itself invokes only `gpio read <PIN>` and never changes GPIO mode or drives an output.
+Use the composite provider to prove passive Wi-Fi observation, preflight, exact hardware identity, known-AP fixture verification and selected approved network-discovery behavior.
 
-## Engagement manifest
+The Marauder CLI itself is not the capability model.
 
-The MVP must load a machine-readable engagement manifest.
+## Generated FAP reference backend
 
-Example shape:
-
-```yaml
-engagement_id: lab-smart-lock-001
-valid_from: 2026-08-22T00:00:00Z
-valid_until: 2026-08-23T00:00:00Z
-mode: non-destructive
-max_action_class: INTERACT
-targets:
-  - target_id: smart-lock-a
-    description: Lab-owned smart lock
-allowed_capabilities:
-  - infrared.observe
-  - wireless.subghz.observe
-  - wireless.nfc.identify
-  - internal.gpio.inspect
-denied_capabilities:
-  - "*.transmit"
-  - "*.emulate"
-  - "*.write"
-```
-
-The schema must reject invalid values.
-
-## Policy requirements
-
-The MVP must enforce policy deterministically.
-
-The policy engine must check:
-
-- engagement is active;
-- target is in scope;
-- capability is allowed;
-- action class does not exceed the engagement limit;
-- required physical constraints are satisfied;
-- required human action is complete;
-- required approval exists;
-- required instrument capability is available and hardware-verified.
-
-The policy result must be one of:
-
-- `ALLOW`;
-- `REQUIRE_APPROVAL`;
-- `REQUIRE_HUMAN_ACTION`;
-- `DENY`.
-
-The LLM cannot override `DENY` or manufacture a hardware-verification result.
-
-## Evidence requirements
-
-Every executed step must create an execution record.
-
-Minimum fields:
+The MVP also includes the first capability-synthesis backend:
 
 ```text
-execution_id
-engagement_id
-target_id
-test_case_id
-capability_id
-action_id
-action_class
-instrument_id
-adapter_name
-adapter_version
-started_at
-finished_at
-normalized_inputs
-result_status
-raw_artifact_reference
-raw_artifact_hash
-normalized_observation
-limitations
+CapabilitySynthesisRequest
+  -> generated FAP project
+  -> review/policy
+  -> uFBT build
+  -> immutable hashes
+  -> bounded deployment
+  -> structured result evidence
+  -> cleanup
 ```
 
-If an operation has no external artifact, preserve the raw response or canonical serialized result.
+The current FAP pipeline proves the mechanics needed for later ESP32/RP2040/STM32 and other synthesis backends.
 
-Hardware-verification evidence is separate from assessment evidence. Capability discovery must resolve the verification store before a physical operation becomes available to the agent.
+## MVP physical exit criteria
 
-## Report requirements
+The reference MVP is physically credible only when the real bench verifies at least:
 
-The MVP report must contain:
+- [ ] Flipper discovery and stable identity;
+- [ ] expected firmware/device state;
+- [ ] valid hardware verification for the native reference capability families;
+- [ ] composite Flipper + Marauder preflight where Wi-Fi is included;
+- [ ] passive Wi-Fi fixture verification;
+- [ ] approved network HIL when that profile is requested;
+- [ ] generated-FAP build/deploy/execute/evidence/cleanup smoke test;
+- [ ] sanitized real-device transcripts captured for replay CI;
+- [ ] one persisted multi-step assessment completed against a lab-owned target;
+- [ ] evidence integrity and report linkage verified;
+- [ ] interrupted execution recovery demonstrated without blind automatic retry.
 
-- engagement summary;
-- target summary;
-- instruments used;
-- tests planned;
-- tests executed;
-- blocked/skipped/inconclusive tests;
-- evidence references;
-- observations;
-- confirmed findings, if any;
-- limitations;
-- OWASP ISTG mappings where applicable.
+## Strategic exit criterion
 
-The report must not invent vulnerabilities from unconfirmed observations.
+The Flipper reference phase should not end with “we added many commands.”
 
-## Simulator requirement
+The important transition into the next phase is a **capability-gap experiment**:
 
-Build a deterministic simulator before depending on physical hardware for every test.
+```text
+assessment needs a physical capability
+        |
+no exact implementation exists
+        |
+resolver determines Flipper can host it
+        |
+agent synthesizes a bounded FAP
+        |
+build -> deploy -> execute -> evidence
+        |
+HIL verifies the implementation
+        |
+implementation is persisted for reuse
+        |
+assessment resumes
+```
 
-The simulator must support:
+A suitable first scenario is UART autodetection/observation on an authorized unknown PCB because it exercises physical setup, timing, generated code, structured evidence and reusable capability memory without requiring a prebuilt fixed command for the exact task.
 
-- instrument discovery;
-- configurable capabilities;
-- successful actions;
-- blocked actions;
-- timeouts;
-- malformed results;
-- unavailable capabilities;
-- human-action requirements.
+## What comes after this MVP
 
-The same runtime tests must work with the simulator and Flipper adapter.
+The next architecture phase is deliberately **not** “Flipper v0.2 with more buttons.”
 
-## MCP scope
+It is:
 
-MCP is optional for the earliest vertical slice but required before v0.1 release.
+1. normalized `HardwareDescriptor` contracts;
+2. physical capability graph/resolution;
+3. generalized synthesis/build/deployment protocols;
+4. refactor FAP generation as `FlipperSynthesisBackend`;
+5. persistent executable capability implementations;
+6. a second materially different programmable provider;
+7. real camera/drone/unknown-PCB target assessments spanning multiple providers.
 
-The first MCP server must expose assessment-level tools.
+See `ROADMAP.md`.
 
-It must not expose unrestricted serial CLI passthrough.
+## Explicit non-goals of the reference MVP
 
-## Explicit non-goals
+The first certification does not claim:
 
-The v0.1 MVP does not include:
-
-- destructive testing;
-- jamming;
-- unrestricted RF transmission;
-- brute-force credential attacks;
-- arbitrary NFC/RFID cloning;
-- autonomous device/tag emulation;
-- arbitrary BadUSB payload execution;
-- arbitrary shell access;
-- arbitrary FAP execution;
-- GPIO output driving during an assessment action;
-- fault injection;
-- chip-off or invasive flash extraction;
-- firmware reverse engineering;
-- cloud/API/mobile assessment;
-- multi-instrument routing;
-- unattended remote physical testing.
-
-## Acceptance criteria
-
-The MVP is complete only when all conditions are true:
-
-- [ ] A stock supported Flipper Zero connects over USB.
-- [ ] Device identity and health are discovered automatically.
-- [ ] The capability registry reports only capabilities backed by valid verification evidence.
-- [ ] `infrared.observe` is hardware-verified.
-- [ ] `wireless.subghz.observe` is hardware-verified.
-- [ ] `wireless.nfc.identify` is hardware-verified.
-- [ ] `internal.gpio.inspect` is hardware-verified.
-- [ ] An engagement manifest loads and validates.
-- [ ] An out-of-scope action is denied without LLM cooperation.
-- [ ] A planner cannot route to an unavailable capability.
-- [ ] A human-required step pauses execution cleanly.
-- [ ] A multi-step assessment completes against a lab-owned target.
-- [ ] Each executed step produces structured evidence.
-- [ ] Raw artifacts or raw responses are preserved and hashed when applicable.
-- [ ] Inconclusive results remain inconclusive.
-- [ ] The report references actual evidence identifiers.
-- [ ] Relevant tests map to OWASP ISTG identifiers or sections.
-- [ ] The same assessment engine runs against the simulator unchanged.
-- [ ] No assessment code depends on Flipper-specific command strings.
+- arbitrary support for any board without a provider/toolchain path;
+- autonomous invasive/fault-injection testing;
+- complete firmware reverse engineering;
+- complete IoT product coverage;
+- production-grade unattended remote labs;
+- that generated code is physically correct merely because it compiled;
+- that Flipper is always the best provider for a hardware task.
 
 ## Demo definition
 
-A release demo should use a lab-owned target with at least two relevant interfaces.
+A strong demo should make the architecture visible:
 
-The operator runs one command or agent request. The system:
+1. an outer harness connects through MCP or Python;
+2. the runtime loads persisted authorized scope;
+3. real Flipper/Marauder hardware is discovered and verified;
+4. the agent receives deterministic methodology/candidate context;
+5. bounded tests execute and produce evidence;
+6. a physical/operator gate pauses correctly if encountered;
+7. assessment state can be resumed from another session/harness;
+8. ideally, one missing low-level capability is synthesized as a FAP and returned as normal evidence.
 
-1. loads the engagement;
-2. detects the Flipper;
-3. resolves verified capabilities;
-4. proposes the assessment plan;
-5. executes allowed bounded steps;
-6. pauses for any required human step;
-7. stores evidence;
-8. generates a report.
-
-The demo should make the architecture visible. It should not rely on a flashy exploit to prove value.
+That final step is the bridge from **Flipper automation** to the intended **adaptive hardware pentester**.
