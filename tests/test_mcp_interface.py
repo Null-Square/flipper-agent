@@ -21,6 +21,7 @@ def _service(tmp_path) -> HardwarePentestService:
         preflight_root=tmp_path / "preflight",
         gate_root=tmp_path / "gates",
         implementation_root=tmp_path / "implementations",
+        generated_project_root=tmp_path / "generated",
     )
 
 
@@ -44,6 +45,7 @@ def test_mcp_read_only_server_exposes_high_level_context_and_candidates(tmp_path
     }
     assert "assessment_create" not in names
     assert "assessment_synthesis_work_order" not in names
+    assert "assessment_synthesis_candidate_build" not in names
     assert "assessment_execute_next" not in names
     assert "assessment_recover_interrupted" not in names
     assert not any("serial" in name for name in names)
@@ -59,6 +61,7 @@ def test_mcp_mutating_tools_require_explicit_server_opt_in(tmp_path) -> None:
     assert "assessment_create" in names
     assert "assessment_refresh" in names
     assert "assessment_synthesis_work_order" in names
+    assert "assessment_synthesis_candidate_build" in names
     assert "assessment_execute_next" in names
     assert "assessment_recover_interrupted" in names
     assert "assessment_candidates" in names
@@ -76,6 +79,9 @@ def test_mcp_http_defaults_to_loopback_and_stable_port() -> None:
     assert args.port == 8765
     assert args.allow_execution is False
     assert args.implementation_root == ".hardware-pentest/implementations"
+    assert args.generated_project_root == ".hardware-pentest/generated"
+    assert args.ufbt_executable == "ufbt"
+    assert args.synthesis_build_timeout_seconds == 120.0
 
 
 def test_mcp_refuses_public_network_binding_without_secure_gateway() -> None:
