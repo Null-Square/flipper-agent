@@ -22,6 +22,7 @@ from hardware_pentest.synthesis import (
     GeneratedProjectWriter,
     GeneratedSourcePolicy,
     LocalCapabilityImplementationStore,
+    SynthesisRejected,
     UfbTBuilder,
 )
 from hardware_pentest.synthesis.candidate import SynthesisCandidateBuilder
@@ -99,7 +100,9 @@ def _descriptor(*, firmware: str = "1.0.0") -> HardwareDescriptor:
 def _order(*, firmware: str = "1.0.0") -> SynthesisWorkOrder:
     descriptor = _descriptor(firmware=firmware)
     request = CapabilitySynthesisRequest(
-        request_id="synth:assessment-1:adaptive.uart.autodetect.v1:internal.uart.autodetect",
+        request_id=(
+            "synth:assessment-1:adaptive.uart.autodetect.v1:internal.uart.autodetect"
+        ),
         capability_id="internal.uart.autodetect",
         target_id="camera-1",
         objective="Passively characterize an operator-prepared UART-like signal.",
@@ -190,13 +193,18 @@ def _successful_runner(calls: list[list[str]]):
             (dist / f"{root.name}.fap").write_bytes(b"compiled-uart-fap")
             return subprocess.CompletedProcess(command, 0, stdout="build ok\n", stderr="")
         if command == ["ufbt", "--version"]:
-            return subprocess.CompletedProcess(command, 0, stdout="ufbt 0.2-test\n", stderr="")
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout="ufbt 0.2-test\n",
+                stderr="",
+            )
         raise AssertionError(command)
 
     return runner
 
 
-def test_candidate_build_derives_manifest_builds_and_persists_implemented_fap(tmp_path: Path) -> None:
+def test_candidate_build_derives_manifest_and_persists_implemented_fap(tmp_path: Path) -> None:
     calls: list[list[str]] = []
     builder, store = _builder(tmp_path, _successful_runner(calls))
     order = _order()
@@ -223,7 +231,10 @@ def test_candidate_build_derives_manifest_builds_and_persists_implemented_fap(tm
     assert manifest.max_runtime_seconds == 6.0
     assert artifact.artifact_sha256 == result["artifact_sha256"]
     assert stored.backend_payload["provenance"]["work_order_id"] == order.work_order_id
-    assert stored.backend_payload["provenance"]["reviewed_source_sha256"] == result["source_sha256"]
+    assert (
+        stored.backend_payload["provenance"]["reviewed_source_sha256"]
+        == result["source_sha256"]
+    )
 
 
 def test_candidate_build_is_idempotent_for_same_work_order_and_source(tmp_path: Path) -> None:
@@ -259,7 +270,7 @@ def test_policy_rejection_creates_no_project_build_or_implementation(tmp_path: P
     order = _order()
     prohibited = SAFE_UART_SOURCE + "\nvoid tx(void) { furi_hal_subghz_tx(); }"
 
-    with pytest.raises(Exception, match="rejected"):
+    with pytest.raises(SynthesisRejected, match="rejected"):
         builder.build(order, work_order_id=order.work_order_id, source=prohibited)
 
     assert calls == []
@@ -271,7 +282,12 @@ def test_policy_rejection_creates_no_project_build_or_implementation(tmp_path: P
 def test_build_failure_creates_no_implementation_record(tmp_path: Path) -> None:
     def failed_runner(command, **kwargs):
         if command == ["ufbt"]:
-            return subprocess.CompletedProcess(command, 2, stdout="", stderr="compile failed\n")
+            return subprocess.CompletedProcess(
+                command,
+                2,
+                stdout="",
+                stderr="compile failed\n",
+            )
         raise AssertionError(command)
 
     builder, store = _builder(tmp_path, failed_runner)
