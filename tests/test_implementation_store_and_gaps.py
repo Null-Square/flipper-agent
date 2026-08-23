@@ -143,7 +143,11 @@ def test_missing_implementation_is_capability_gap_not_terminal_block(tmp_path: P
     step = state.steps[0]
     assert step.status is StepStatus.CAPABILITY_GAP
     assert step.required_capability == "internal.uart.autodetect"
-    assert step.action is None
+    assert step.action is not None
+    assert step.action.capability_id == "internal.uart.autodetect"
+    assert step.action.target_id == "camera-1"
+    assert step.action.action_class is ActionClass.OBSERVE
+    assert step.action.inputs == {}
     assert step.executable is False
 
     class ForbiddenExecutor:

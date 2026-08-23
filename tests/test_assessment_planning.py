@@ -80,7 +80,9 @@ def test_unavailable_capabilities_are_visible_as_resumable_gaps() -> None:
     assert infrared.status is StepStatus.READY
     assert nfc.status is StepStatus.CAPABILITY_GAP
     assert nfc.executable is False
-    assert nfc.action is None
+    assert nfc.action is not None
+    assert nfc.action.capability_id == "wireless.nfc.identify"
+    assert nfc.action.target_id == "target-a"
     assert nfc.required_capability == "wireless.nfc.identify"
     assert "No current capability implementation" in nfc.reason
 
