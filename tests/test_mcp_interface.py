@@ -27,7 +27,7 @@ def _tool_names(server) -> set[str]:
     return {tool.name for tool in asyncio.run(server.list_tools())}
 
 
-def test_mcp_read_only_server_exposes_only_high_level_domain_tools(tmp_path) -> None:
+def test_mcp_read_only_server_exposes_high_level_context_and_candidates(tmp_path) -> None:
     names = _tool_names(build_server(_service(tmp_path)))
 
     assert names == {
@@ -36,9 +36,11 @@ def test_mcp_read_only_server_exposes_only_high_level_domain_tools(tmp_path) -> 
         "engagement_list",
         "assessment_list",
         "assessment_context",
+        "assessment_candidates",
         "verification_records",
         "preflight_records",
     }
+    assert "assessment_create" not in names
     assert "assessment_execute_next" not in names
     assert "assessment_recover_interrupted" not in names
     assert not any("serial" in name for name in names)
@@ -48,11 +50,13 @@ def test_mcp_read_only_server_exposes_only_high_level_domain_tools(tmp_path) -> 
     assert not any("engagement_import" in name for name in names)
 
 
-def test_mcp_execution_tools_require_explicit_server_opt_in(tmp_path) -> None:
+def test_mcp_mutating_tools_require_explicit_server_opt_in(tmp_path) -> None:
     names = _tool_names(build_server(_service(tmp_path), allow_execution=True))
 
+    assert "assessment_create" in names
     assert "assessment_execute_next" in names
     assert "assessment_recover_interrupted" in names
+    assert "assessment_candidates" in names
     assert "gate_grant" not in names
     assert "engagement_import" not in names
 
