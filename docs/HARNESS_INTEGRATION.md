@@ -7,61 +7,124 @@ Hardware Pentest Agent owns the hardware-pentesting domain. It does not need to 
 ```text
 Codex / Null-AI / another agent harness
         |
-        |  MCP / CLI / Python
+        | MCP / CLI / Python
         v
 Hardware Pentest Agent service boundary
         |
         +-- durable engagement scope
-        +-- durable assessment state
-        +-- pentest methodology and test semantics
-        +-- capability registry/routing
-        +-- policy and operator gates
+        +-- durable target/component + assessment state
+        +-- pentest methodology and candidate-test semantics
+        +-- capability implementations / routing
+        +-- hardware providers / descriptors
+        +-- synthesis / build / deployment provenance
         +-- physical preflight and HIL verification
-        +-- evidence, observations, and findings
-        +-- instrument and generated-tool adapters
+        +-- evidence / observations / findings
         |
         v
 real hardware
 ```
 
-The outer harness may own model invocation, conversation compaction, generic retries, file/shell tools, and user interaction. Those concerns must not become prerequisites for the domain runtime.
+The outer harness may own model invocation, conversation compaction, generic retries, generic coding tools, and user interaction. Those concerns must not become prerequisites for the domain runtime.
+
+This lets Codex remain useful during development and later production use without making Codex the product architecture.
 
 ## Stable service facade
 
 `hardware_pentest.service.HardwarePentestService` is the framework-free integration boundary.
 
-Read/domain-context operations include:
+Current read/domain-context operations include:
 
 - `service_info`
 - `hardware_discover`
 - `engagement_list`
 - `assessment_list`
 - `assessment_context`
+- `assessment_candidates`
 - `verification_records`
 - `preflight_records`
 
-Execution operations include:
+Current mutating/execution operations include:
 
+- `assessment_create`
 - `assessment_execute_next`
 - `assessment_recover_interrupted`
 
-`assessment_context` is intentionally bounded. It exposes durable pentest state for one reasoning turn without depending on an LLM conversation transcript. Target metadata values are not copied into the compact context; only metadata keys are surfaced by this interface.
+`assessment_context` is intentionally bounded and durable. `assessment_candidates` returns deterministic methodology semantics such as purpose, prerequisites, expected evidence, stop conditions, result rules, capability, action class and gate requirements. Different outer harnesses therefore reason over the same pentest domain rather than inventing their own checklist from prompt text.
 
-Execution goes through the existing assessment runner, policy engine, capability registry, hardware-verification resolver, preflight store, and evidence store. The service layer does not reimplement device behavior.
+Execution goes through the existing assessment runner, policy engine, capability registry, hardware-verification resolver, preflight store and evidence store. The interface layer does not reimplement device behavior.
+
+## Future provider/synthesis operations
+
+As the programmable-hardware architecture lands, the harness-neutral surface should grow by **domain concepts**, not vendor commands.
+
+Expected directions include:
+
+```text
+hardware.describe
+hardware.providers
+capability.search
+capability.implementations
+synthesis.propose
+synthesis.status
+synthesis.implementations
+evidence.get
+```
+
+An outer harness may help generate code for a requested capability, but it should not have to understand whether the implementation eventually becomes a Flipper FAP, ESP-IDF project, RP2040 PIO program or another artifact.
+
+```text
+outer harness
+   -> capability need
+   -> Hardware Pentest Agent synthesis request
+   -> selected provider/backend
+   -> optional coding/model assistance
+   -> runtime build/deploy/evidence
+```
+
+See `PROGRAMMABLE_HARDWARE.md` and `CAPABILITY_SYNTHESIS.md`.
 
 ## Operator-owned scope
 
-An outer agent must not be allowed to redefine its legal/technical scope while executing an assessment. Import the engagement manifest through the operator interface:
+An outer agent must not redefine its technical assessment scope while executing. Import the engagement manifest through the operator interface:
 
 ```bash
 hardware-pentest-operator engagement-import --manifest ./engagement.yaml
 ```
 
-The runtime persists a normalized integrity-checked copy under `.hardware-pentest/engagements/`. Assessment execution resolves the engagement by ID from this store; it does not trust an arbitrary manifest path supplied by the model during execution.
+The runtime persists a normalized integrity-checked copy under `.hardware-pentest/engagements/`. Assessment creation/execution resolves scope by ID from this store rather than trusting an arbitrary model-supplied manifest path.
+
+## Deterministic planning across harnesses
+
+A harness creates an assessment from persisted scope and a known provider backend, then reads candidate tests from the runtime.
+
+Conceptually:
+
+```text
+engagement ID + target ID
+        |
+        v
+assessment_create
+        |
+        v
+persisted deterministic plan
+        |
+        v
+assessment_candidates
+        |
+        +-- purpose
+        +-- prerequisites
+        +-- expected evidence
+        +-- stop conditions
+        +-- result rules
+        +-- action class
+        +-- operator gates
+```
+
+This is deliberate: model choice may influence which useful candidate is selected next, but it does not redefine test semantics.
 
 ## Operator gates
 
-The outer agent cannot satisfy approval, physical-human-action, or interrupted-execution recovery gates by passing booleans such as `approve=true`.
+The outer agent cannot satisfy approval, physical-human-action or interrupted-execution recovery gates by passing booleans such as `approve=true`.
 
 When a step pauses, an operator may grant exactly one short-lived gate from an interactive terminal:
 
@@ -72,59 +135,33 @@ hardware-pentest-operator gate-grant \
   --kind approval
 ```
 
-For a physical setup confirmation:
+Physical setup and recovery use the same command with `human_action` or `recovery` gate kinds.
 
-```bash
-hardware-pentest-operator gate-grant \
-  --assessment-id assessment-123 \
-  --step-id 'assessment-123:gpio.inspect.v1' \
-  --kind human_action
-```
-
-For acknowledging an interrupted step whose physical outcome is unknown:
-
-```bash
-hardware-pentest-operator gate-grant \
-  --assessment-id assessment-123 \
-  --step-id 'assessment-123:some-step' \
-  --kind recovery
-```
-
-`gate-grant` requires an interactive TTY and asks the operator to type the exact step ID. Grants are integrity-checked, short-lived, exact-step scoped, and one-shot. They are consumed by the runtime when used.
-
-Do **not** expose the operator CLI as an MCP tool.
+Gate creation remains outside MCP.
 
 ## MCP
 
-Install the optional MCP support:
+Install MCP support:
 
 ```bash
 pip install -e ".[mcp,flipper]"
 ```
 
-### Read-only local agent harness
-
-Run the server over stdio:
+### Read-oriented local harness
 
 ```bash
 hardware-pentest-mcp
 ```
 
-This is the safe default. No assessment execution tools are registered.
-
-### Local executing agent harness
-
-For a trusted local harness such as Codex running on the hardware host:
+### Local harness with assessment creation/execution
 
 ```bash
 hardware-pentest-mcp --allow-execution
 ```
 
-Execution is still high-level and one-step-at-a-time. The MCP tool has no approval/human-action arguments. Required gates must already exist in the operator gate store.
+Execution remains high-level and one-step-at-a-time. The MCP tool cannot self-assert operator gates.
 
 ### Local Streamable HTTP
-
-Read-only:
 
 ```bash
 hardware-pentest-mcp \
@@ -133,81 +170,101 @@ hardware-pentest-mcp \
   --port 8765
 ```
 
-The MCP endpoint is `/mcp`.
+The endpoint is `/mcp`.
 
-To expose execution tools on the local HTTP listener, two independent opt-ins are required:
-
-```bash
-export HPA_MCP_REMOTE_EXECUTION=1
-hardware-pentest-mcp \
-  --transport streamable-http \
-  --host 127.0.0.1 \
-  --port 8765 \
-  --allow-execution
-```
+Local HTTP execution requires both explicit server enablement and the additional remote-execution environment opt-in already enforced by the launcher.
 
 The built-in launcher deliberately refuses non-loopback binding.
 
-For an online harness, keep the service bound to localhost and use a secure MCP tunnel, VPN/private overlay, or separately deployed authenticated MCP/ASGI gateway. Production remote access must add authentication, authorization, TLS, host allowlisting, audit identity, and deployment-specific rate/session controls.
+## Hosted/online harness direction
+
+A future online GPT/agent should not receive direct USB/serial access. It connects to a hardware-host service boundary:
+
+```text
+online harness
+      |
+authenticated MCP gateway / private tunnel
+      |
+localhost Hardware Pentest Agent daemon
+      |
+hardware providers
+```
+
+The hardware daemon remains physically near the bench. Remote connectivity changes only the interface transport, not assessment/policy/evidence semantics.
+
+Production remote access must add deployment-specific authentication, authorization, TLS/private transport, audit identity and session/rate controls.
 
 ## Trust distinction: local development vs hosted agents
 
-A local coding harness with shell access to the repository is inherently a highly trusted development actor: it can potentially edit files or invoke operator commands. Use that mode for development and controlled bench work.
+A local coding harness with repository shell access is a highly trusted development actor and can potentially edit/invoke local commands. Use that mode for controlled development/bench work.
 
-A production/hosted agent should **not** receive shell access on the hardware host. It should receive only the MCP service tools. The operator-only engagement import and gate-grant surfaces remain outside MCP.
+A hosted production agent should receive only the domain MCP surface and no shell on the hardware host.
 
 ```text
 Development Codex
   -> local repo/shell + MCP
-  -> trusted bench workflow
+  -> cheap interactive bench engineering
 
-Hosted/production agent
-  -> authenticated MCP only
-  -> no shell on hardware host
-  -> no gate-grant tool
-  -> no engagement-import tool
+Hosted agent
+  -> authenticated domain MCP only
+  -> no generic shell/serial access
 ```
-
-## Interface invariants
-
-Every interface must preserve these rules:
-
-1. No raw Flipper CLI tool.
-2. No raw Marauder command tool.
-3. No generic serial-write tool.
-4. No interface-local bypass of engagement policy, approval, human action, preflight, verification, or evidence capture.
-5. An agent cannot self-assert operator approval or physical completion.
-6. An agent cannot acknowledge an unknown interrupted hardware outcome without a recovery grant.
-7. Mocks and recorded transcripts never create `hardware_verified` state.
-8. Secrets are represented by references, not copied into durable agent context.
-9. Remote/network exposure does not change capability semantics or action classification.
-10. Remote execution remains one bounded assessment step per service call.
 
 ## Context ownership
 
-The outer harness may compact or discard its conversation. The pentest must still be recoverable from runtime state.
+The outer harness may compact or discard its conversation. The pentest remains recoverable because domain state is durable.
 
 ```text
-conversation context       -> outer harness
-engagement scope           -> Hardware Pentest Agent
-assessment context         -> Hardware Pentest Agent
-hardware state             -> Hardware Pentest Agent
-verification/evidence      -> Hardware Pentest Agent
-operator gates             -> Hardware Pentest Agent / operator
+conversation context              -> outer harness
+engagement scope                  -> Hardware Pentest Agent
+target/component graph            -> Hardware Pentest Agent
+assessment/TestCase state         -> Hardware Pentest Agent
+hardware descriptors/providers    -> Hardware Pentest Agent
+capability implementation memory  -> Hardware Pentest Agent
+build/deployment provenance       -> Hardware Pentest Agent
+verification/evidence             -> Hardware Pentest Agent
 ```
 
-An agent should refresh its working state from `assessment_context` instead of relying on remembered prose from previous model turns.
+An agent should refresh from `assessment_context`, `assessment_candidates`, and future provider/implementation APIs rather than trust remembered prose.
 
-## Long-term plug-and-play target
+## Coding assistance vs physical capability ownership
 
-The desired matrix is:
+The outer harness can be excellent at writing code. That does not mean it should own deployment semantics.
+
+Example:
+
+```text
+runtime: "need internal.uart.autodetect on this provider"
+   |
+Codex: generate candidate implementation source
+   |
+runtime: review/build/hash/deploy/execute/evidence/HIL
+```
+
+A different coding model can be substituted without changing the capability implementation record or assessment evidence.
+
+## Interface invariants
+
+Every interface must preserve these design rules:
+
+1. Assessment semantics are capability/TestCase based, not vendor-command based.
+2. Provider/toolchain details stay below the service boundary where possible.
+3. Harness changes do not reset target/assessment/evidence state.
+4. Mocks and transcript replay never create real hardware verification.
+5. Generated artifacts remain explicit implementations with build/deployment provenance.
+6. A capability synthesized for one provider is not assumed compatible with another without descriptor matching and verification.
+7. A camera/drone/router target does not require a new generic agent harness; it extends the target/component and capability/provider domain.
+
+## Plug-and-play target
 
 | Consumer | Preferred interface |
 | --- | --- |
-| Codex local | MCP stdio with optional execution |
+| Codex local | MCP stdio with optional execution + local coding tools |
 | Human / CI | CLI |
 | Null-AI | Python service or MCP |
-| Other local agent harness | MCP stdio or local Streamable HTTP |
-| Hosted/online agent harness | Authenticated remote MCP gateway/tunnel |
+| Other local agent harness | MCP stdio or local HTTP |
+| Hosted/online harness | authenticated MCP gateway/tunnel |
 
-The domain behavior must remain the same across all of them. Agent evaluations should run identical assessment scenarios through different outer harnesses and compare scope adherence, safety, evidence quality, test coverage, and findings.
+Agent evaluations should run identical assessment scenarios through multiple outer harnesses and compare coverage, capability choices, unnecessary actions, evidence quality, synthesized-tool quality and findings.
+
+The goal is not identical prose. The goal is that the same durable hardware-pentest domain produces consistently strong and reproducible physical work regardless of which competent outer harness is plugged in.

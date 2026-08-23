@@ -4,7 +4,7 @@
 
 **Agent-native hardware and embedded security testing.**
 
-Connect supported security instruments, define an authorized assessment objective, and let the runtime discover available capabilities, plan bounded tests, execute approved actions, capture evidence, and produce reproducible findings.
+Turn connected boards, probes, radios, debuggers and other physical computing resources into programmable pentesting instruments that any outer agent harness can use.
 
 ![Status](https://img.shields.io/badge/status-Flipper--first%20MVP-FED900)
 ![Use](https://img.shields.io/badge/use-authorized%20only-000000)
@@ -12,34 +12,55 @@ Connect supported security instruments, define an authorized assessment objectiv
 
 </div>
 
-> **Current repository name:** `flipper-agent`. The project direction has expanded beyond one device. The intended repository name is `hardware-pentest-agent`. Flipper Zero is the first supported instrument, not the architecture.
+> **Current repository name:** `flipper-agent`. The product is `hardware-pentest-agent`. Flipper Zero is the first reference hardware provider, not the architecture.
 
-## Mission
+## Product thesis
 
-Give AI pentesters controlled, vendor-neutral access to physical and embedded security-testing capabilities.
+Hardware Pentest Agent is not a Flipper command wrapper and it is not a fixed catalog of hardware tools.
 
-The runtime sits between an agent and specialist security instruments. It does not replace those instruments. It gives the agent a stable capability model, authorization gates, physical-safety validation, evidence capture, and a reproducible assessment state.
+The long-term goal is a **hardware-native pentesting runtime** that lets an AI pentester:
+
+1. understand the target and its physical/embedded attack surface;
+2. understand what connected hardware can physically do;
+3. reuse an existing capability when one fits;
+4. compose lower-level primitives when possible;
+5. synthesize a new app, firmware helper, decoder or host tool when the required capability does not exist;
+6. deploy and operate that implementation on an appropriate board/tool;
+7. capture reproducible evidence and continue the assessment.
 
 ```text
-Security Agent
-      |
-      v
-Hardware Pentest Agent
-      |
-      +-- Target and assessment model
-      +-- Capability registry and routing
-      +-- Scope, policy, and approval gates
-      +-- Evidence and findings
-      |
-      +-- Instrument adapters
-             |
-             +-- Flipper Zero   <- MVP
-             +-- Proxmark3      <- next proof of abstraction
-             +-- sigrok/Saleae  <- planned
-             +-- OpenOCD        <- planned
-             +-- HackRF         <- planned
-             +-- other tools    <- future
+Codex / Null-AI / another agent harness
+                  |
+             MCP / CLI / Python
+                  |
+                  v
+        Hardware Pentest Agent
+                  |
+       assessment / methodology
+                  |
+             capability need
+                  |
+       +----------+----------+
+       |          |          |
+     reuse      compose    synthesize
+       |          |          |
+       +----------+----------+
+                  |
+          hardware resolver
+                  |
+   +--------------+--------------+----------------+
+   |              |              |                |
+ Flipper        ESP32          RP2040       specialist tools
+   FAP          ESP-IDF        Pico SDK     / probes / SDR
+   |              |              |                |
+   +--------------+--------------+----------------+
+                  |
+             physical world
 ```
+
+A camera, drone, router, lock, controller or unknown PCB can be the **target**. Flipper Zero, ESP32/RP2040/STM32 boards, Proxmark3, logic analyzers, debug probes, SDRs or Linux SBCs can be **hardware providers** used to investigate it. A development board may sometimes be both, but those roles remain explicit.
+
+See [`docs/PROGRAMMABLE_HARDWARE.md`](docs/PROGRAMMABLE_HARDWARE.md).
 
 ## Harness-neutral by design
 
@@ -48,249 +69,206 @@ Hardware Pentest Agent owns the **hardware-pentesting domain**, not the generic 
 Codex, Null-AI, another MCP-capable harness, or a future hosted agent can sit outside the runtime:
 
 ```text
-Codex / Null-AI / another agent harness
-        |
-        | MCP / CLI / Python
-        v
+outer agent harness
+      |
+      | reasoning / conversation / generic tool loop
+      v
 Hardware Pentest Agent
-        |
-        +-- durable assessment context
-        +-- methodology / TestCases
-        +-- capability registry
-        +-- scope / policy / approvals
-        +-- physical preflight / HIL verification
-        +-- evidence / observations / findings
-        |
-        v
-Flipper / Marauder / future instruments
+      |
+      +-- durable target + assessment state
+      +-- methodology / TestCases
+      +-- capability graph / implementations
+      +-- hardware descriptors
+      +-- build + deployment provenance
+      +-- physical preflight / HIL verification
+      +-- evidence / observations / findings
+      |
+      v
+physical hardware
 ```
 
-The outer harness may own model inference, conversation compaction, generic retries, and user interaction. Critical pentest state must remain durable in this runtime so changing harnesses does not change safety or evidence semantics.
+Changing the outer harness must not change the pentest state, hardware semantics or evidence model.
 
 See [`docs/HARNESS_INTEGRATION.md`](docs/HARNESS_INTEGRATION.md).
 
-## Why this project exists
+## Core abstraction: capability need, not device command
 
-IoT and embedded assessments cross several attack surfaces: wireless interfaces, internal buses, debug ports, storage, firmware, physical interfaces, network services, mobile applications, APIs, and cloud services.
-
-Specialist tools already solve many low-level tasks well. The missing layer is a security-agent runtime that can:
-
-1. model the authorized target;
-2. determine which tests apply;
-3. discover connected instruments and their capabilities;
-4. choose an appropriate instrument for each test step;
-5. validate scope and physical constraints before execution;
-6. require human action or approval when needed;
-7. preserve raw evidence and provenance;
-8. separate observations from confirmed findings;
-9. produce a reproducible assessment record.
-
-The project uses the OWASP IoT Security Testing Guide (ISTG) as an initial testing ontology and methodology reference. It does not copy the guide or claim formal compliance.
-
-## Core abstraction: capabilities, not devices
-
-The agent should reason about assessment capabilities such as:
+The agent reasons about capabilities such as:
 
 ```text
 wireless.nfc.identify
-wireless.nfc.observe
-wireless.rfid.identify
 wireless.subghz.observe
 internal.uart.observe
+internal.uart.autodetect
 internal.spi.capture
 internal.i2c.capture
 debug.jtag.detect
 debug.swd.detect
 memory.acquire
 firmware.extract
-firmware.analyze
 protocol.decode
-evidence.capture
 ```
 
-Device-specific commands stay inside adapters.
+A capability may be satisfied by:
+
+- a verified built-in adapter operation;
+- a composition of lower-level verified primitives;
+- a mature external tool;
+- generated host-side software;
+- a synthesized board-specific app/firmware artifact.
+
+The runtime should choose the most appropriate implementation for the available hardware rather than making the assessment logic know Flipper, ESP-IDF, OpenOCD or vendor command syntax.
+
+## Programmable hardware providers
+
+The roadmap introduces a normalized `HardwareDescriptor` describing what a board/tool can provide:
+
+- MCU/SoC architecture;
+- GPIO and voltage domain;
+- UART/SPI/I2C/CAN and other buses;
+- Wi-Fi/BLE/NFC/Sub-GHz/radio resources;
+- USB roles;
+- ADC/DAC/timers/PIO/DMA where relevant;
+- debug/programming interfaces;
+- toolchains and artifact types;
+- deployment/recovery methods;
+- evidence channels and verified limitations.
+
+This lets capability synthesis become hardware-neutral:
 
 ```text
-Assessment test
-      |
-      v
-Required capability
-      |
-      v
-Capability registry
-      |
-      v
-Best available instrument
-      |
-      v
-Policy + constraints
-      |
-      v
-Adapter execution
-      |
-      v
-Evidence
+CapabilitySynthesisRequest
+        |
+        +-- Flipper backend -> FAP / uFBT
+        +-- ESP32 backend   -> ESP-IDF / PlatformIO
+        +-- RP2040 backend  -> Pico SDK / PIO
+        +-- STM32 backend   -> STM32/Zephyr/OpenOCD path
+        +-- Linux backend   -> bounded native/container tool
 ```
 
-This lets the same assessment engine use different instruments without rewriting agent logic.
+The current generated-FAP system is the first implementation of this larger synthesis architecture.
 
-## Flipper-first MVP
+## Flipper-first reference MVP
 
-The first MVP uses a USB-connected Flipper Zero because one device exposes several useful physical capability families and has a documented CLI/RPC control surface.
+Flipper Zero remains the first proof because it combines multiple physical interfaces with a practical external-app model.
 
-### MVP goal
+The current implementation includes:
 
-Given an authorized IoT target and a USB-connected Flipper Zero, the runtime must:
+- USB discovery and typed Flipper operations;
+- passive IR, Sub-GHz, NFC and prepared GPIO capabilities;
+- ESP32 Marauder passive Wi-Fi and approved network-assessment capabilities;
+- composite Flipper + Marauder preflight;
+- hardware-verification records;
+- persistent assessment runtime and evidence;
+- generated FAP review/build/deploy/execute/evidence pipeline;
+- fault injection, transcript replay and opt-in HIL test profiles;
+- harness-neutral Python service and MCP interface;
+- deterministic candidate-test planning independent of model conversation state.
 
-- discover the device and supported capabilities;
-- create a structured target and engagement state;
-- build a passive-first, non-destructive assessment plan;
-- execute approved observation steps across multiple capability families;
-- block actions outside the engagement policy without relying on the LLM;
-- capture structured evidence with hashes and provenance;
-- keep inconclusive observations separate from findings;
-- generate an OWASP-ISTG-aligned assessment report.
+The critical next physical proof is not merely “more Flipper commands.” It is:
 
-### MVP capability families
+> Encounter a hardware capability gap during an assessment, synthesize the missing capability for an available provider, validate it on real hardware, store the implementation, and resume the assessment.
 
-The MVP targets at least four working families from the Flipper Zero where supported by the selected transport and firmware:
-
-- NFC observation and identification;
-- low-frequency RFID observation and identification;
-- Sub-GHz observation;
-- infrared observation;
-- GPIO/UART-oriented inspection where safe and technically available.
-
-### Explicit MVP non-goals
-
-The MVP does not provide autonomous destructive or high-impact testing. The initial release excludes arbitrary shell execution, unrestricted FAP execution, credential attacks, autonomous emulation, arbitrary BadUSB payload execution, fault injection, invasive memory extraction, and unrestricted RF transmission.
-
-Policy-reviewed generated FAPs may be synthesized and executed only through the reserved NullSquare generated-app pipeline with immutable build provenance, bounded runtime, structured evidence, approval, and cleanup. That is not an arbitrary FAP execution escape hatch.
-
-## Safety model
-
-The language model is not the enforcement boundary.
-
-Every physical action passes through deterministic checks:
+## Example: unknown camera board
 
 ```text
-Agent proposal
-      |
-      v
-Typed capability schema
-      |
-      v
-Engagement scope
-      |
-      v
-Instrument constraints
-      |
-      v
-Risk policy
-      |
-      +--> blocked
-      +--> human approval required
-      +--> allowed
-      |
-      v
-Execution
+Camera target
+   |
+   +-- Wi-Fi visible
+   +-- unknown 4-pin header
+   +-- external SPI flash
+   |
+agent hypothesis: header may be UART
+   |
+need: internal.uart.autodetect
+   |
+no existing exact implementation
+   |
+HardwareDescriptor says Flipper can provide UART/GPIO + FAP toolchain
+   |
+generate bounded FAP
+   |
+build -> deploy -> capture -> evidence
+   |
+identified UART configuration
+   |
+continue assessment
 ```
 
-Initial action classes:
+The same methodology should later work if the better provider is RP2040, ESP32, a logic analyzer or a debug probe.
 
-- `OBSERVE` - passive or read-only activity;
-- `INTERACT` - bounded interaction with a target;
-- `TRANSMIT` - intentional RF/IR transmission;
-- `MODIFY` - changes target or instrument state relevant to the assessment;
-- `EMULATE` - impersonates or emulates an authorized device/tag/signal;
-- `DESTRUCTIVE` - fault injection or invasive/destructive work.
+## Example: drone
 
-The default MVP policy permits only explicitly scoped low-risk actions. Higher-risk classes are blocked or require explicit operator approval.
+A drone can contain multiple target components: flight controller, radio link, GNSS, ESC buses, storage, camera, companion computer and debug interfaces. Hardware Pentest Agent should model those components under one assessment and route each physical question to the best available provider without becoming a drone-specific agent.
 
-## Human actions are first-class
+## Safety and reproducibility
 
-Hardware testing cannot be fully autonomous. Some steps require a person to open an enclosure, identify ground, measure voltage, place probes, attach adapters, or confirm a physical connection.
+The language model is not the enforcement boundary. Physical operations remain typed, scoped and evidence-producing. Human setup/approval is represented explicitly, and real capabilities do not become `hardware_verified` from mocks or transcript replay.
 
-The assessment engine therefore supports `HUMAN_ACTION_REQUIRED` as a normal step state. The agent must not guess that physical setup is safe or complete.
+Initial action classes are:
 
-## Evidence model
+- `OBSERVE`;
+- `INTERACT`;
+- `TRANSMIT`;
+- `MODIFY`;
+- `EMULATE`;
+- `DESTRUCTIVE`.
 
-Every executed step should produce a durable record containing:
+The programmable-hardware direction does not mean exposing unrestricted shell/serial/firmware execution. Synthesis is an implementation mechanism behind the same assessment/runtime contracts.
 
-- engagement and target identifiers;
-- test case and capability;
-- instrument and adapter version;
-- exact normalized inputs;
-- timestamps;
-- raw output or artifact reference;
-- artifact hash when applicable;
-- normalized observation;
-- execution result and limitations.
+## Evidence and executable capability memory
 
-The reporting layer promotes an observation to a finding only when evidence supports the claim.
+Every executed step links engagement, target, TestCase, capability, hardware provider, implementation/artifact version, normalized inputs, raw evidence, hashes, observation and limitations.
 
-## Repository layout
+A synthesized implementation that succeeds in HIL can later become a reusable route with:
 
-```text
-src/hardware_pentest/
-  core/          domain models and capability contracts
-  runtime/       discovery, registry, routing, execution, jobs
-  service/       harness-neutral domain service facade
-  policy/        scope, risk, approvals, physical constraints
-  evidence/      artifacts, provenance, observations, findings
-  adapters/      device/tool integrations
-    flipper/     first instrument adapter
-    marauder/    ESP32 Marauder Wi-Fi adapter
-  interfaces/    CLI and thin MCP adapters
-  reporting/     assessment output
-  synthesis/     policy-gated generated Flipper capabilities
+- capability ID;
+- source/artifact hashes;
+- compatible hardware descriptors;
+- toolchain constraints;
+- evidence schema;
+- known limitations;
+- verification records.
 
-docs/
-  ARCHITECTURE.md
-  HARNESS_INTEGRATION.md
-  TESTING.md
-  MVP.md
-  ROADMAP.md
-  SECURITY_MODEL.md
-  CAPABILITY_MODEL.md
-```
+The system grows its hardware competence through **verified executable capability memory**, not by relying on an LLM to remember old conversations.
 
 ## Interfaces
 
 MCP is an interface, not the architecture.
 
-The runtime is intended to remain usable from:
+Supported integration direction:
 
-- a native Python service facade;
-- the local CLI;
-- an MCP server;
-- Null-AI or another outer agent harness.
+```text
+Codex local                -> MCP stdio
+Human / CI                 -> CLI
+Null-AI                    -> Python service or MCP
+Other local harness        -> MCP stdio / local HTTP
+Hosted/online harness      -> authenticated gateway/tunnel -> local runtime
+```
 
-Install MCP support with:
+Install MCP support:
 
 ```bash
 pip install -e ".[mcp]"
 ```
 
-Local MCP via stdio:
+Run local MCP:
 
 ```bash
 hardware-pentest-mcp
 ```
 
-Local Streamable HTTP MCP:
+Enable high-level assessment creation/execution explicitly:
 
 ```bash
-hardware-pentest-mcp --transport streamable-http --host 127.0.0.1 --port 8765
+hardware-pentest-mcp --allow-execution
 ```
 
-The built-in MCP launcher refuses non-loopback binding. Hosted/online harnesses should reach a localhost service through a secure MCP tunnel or a separately authenticated deployment layer rather than exposing unauthenticated hardware control publicly.
-
-The initial MCP surface is intentionally high-level and read-oriented. Raw serial, raw Flipper CLI, and raw Marauder commands are not tools.
+The MCP surface exposes assessment/domain operations rather than generic serial or device-command passthrough.
 
 ## Testing
 
-Use the named test harness profiles:
+Use the named profiles:
 
 ```bash
 python scripts/test_harness.py quick
@@ -298,24 +276,49 @@ python scripts/test_harness.py contract
 python scripts/test_harness.py ci
 ```
 
-Real hardware HIL is explicit and opt-in. Recorded sanitized device transcripts can be replayed through production transports in ordinary CI, but replay never creates hardware-verification evidence.
+Real hardware HIL is explicit and opt-in. Sanitized real-device transcripts can be replayed through production transports in normal CI, but replay never creates real hardware-verification state.
 
-See [`docs/TESTING.md`](docs/TESTING.md).
+See [`docs/HARDWARE_TESTING.md`](docs/HARDWARE_TESTING.md).
+
+## Repository direction
+
+```text
+src/hardware_pentest/
+  core/          target, capability, engagement and hardware-domain contracts
+  assessment/    methodology, planning and persistent state
+  runtime/       routing and execution
+  service/       harness-neutral Python boundary
+  policy/        scope and physical/action constraints
+  evidence/      artifacts, provenance, observations and findings
+  adapters/      existing hardware/tool implementations
+  synthesis/     capability-generation pipeline; Flipper backend is first
+  interfaces/    CLI and MCP
+  reporting/     evidence-linked output
+
+docs/
+  PROGRAMMABLE_HARDWARE.md
+  ARCHITECTURE.md
+  CAPABILITY_SYNTHESIS.md
+  HARNESS_INTEGRATION.md
+  HARDWARE_TESTING.md
+  ROADMAP.md
+  MVP.md
+```
 
 ## Roadmap summary
 
-1. Define schemas and deterministic simulator. **Done**
-2. Build the Flipper USB transport and adapter. **Done**
-3. Implement capability discovery and passive-first actions. **In progress / working MVP**
-4. Add engagement policy, approval gates, and evidence capture. **Done**
-5. Run a reproducible multi-step Flipper assessment. **Done in software; physical coverage expanding**
-6. Add a harness-neutral service facade and MCP interface. **In progress**
-7. Harden real-device HIL, transcript replay, and agent evaluations. **In progress**
-8. Add Proxmark3 as the second instrument and prove vendor-neutral routing.
-9. Add logic/debug/RF/firmware tool adapters.
-10. Build multi-instrument IoT hardware assessments and integrate with Null-AI/other harnesses.
+1. Flipper-first capability/runtime foundation. **Implemented in software; HIL coverage expanding.**
+2. Harness-neutral Python/MCP planning and execution. **Implemented.**
+3. Real Flipper + Marauder certification and replay corpus. **Next physical milestone.**
+4. Introduce `HardwareDescriptor`, hardware-provider and synthesis-backend contracts.
+5. Refactor generated FAPs as the first generic synthesis backend.
+6. Persist/promote synthesized capability implementations after HIL.
+7. Add a materially different programmable provider (RP2040/ESP32 or debug/capture provider).
+8. Prove capability-gap -> synthesis -> deployment -> evidence -> resume on real hardware.
+9. Expand to multi-component targets such as cameras, drones, routers and controllers.
+10. Build multi-provider assessments and integrate broadly with external agent harnesses.
 
-See [`docs/ROADMAP.md`](docs/ROADMAP.md) and [`docs/MVP.md`](docs/MVP.md).
+See [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Reference methodology
 
@@ -326,17 +329,15 @@ Initial design references include:
 - [Flipper Zero protobuf definitions](https://github.com/flipperdevices/flipperzero-protobuf)
 - [NIST IR 8259 Rev. 1](https://csrc.nist.gov/pubs/ir/8259/r1/final)
 
-These sources guide terminology and test coverage. The project remains responsible for its own implementation, validation, and safety controls.
+The project remains responsible for its own implementation and hardware validation.
 
 ## Responsible use
 
-This project is for authorized security testing and research only.
-
-Use it only on targets that you own or are explicitly authorized to assess. Follow applicable radio, privacy, access-control, export, and cybersecurity laws. A configured engagement scope does not create legal authorization by itself.
+This project is for authorized security testing and research only. Use it only on hardware and systems you own or are explicitly authorized to assess.
 
 ## Current status
 
-**Phase:** Flipper-first harness kernel, real-hardware hardening, and harness-neutral integration.
+**Phase:** Flipper-first reference provider + harness-neutral runtime, moving into generic programmable-hardware abstraction and real-HIL proof.
 
 The repository is not yet a production pentesting system.
 
