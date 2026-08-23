@@ -44,7 +44,9 @@ def _implementation(artifact_sha256: str) -> CapabilityImplementationRecord:
     )
 
 
-def test_implementation_store_survives_process_restart_and_rechecks_artifact(tmp_path: Path) -> None:
+def test_implementation_store_survives_process_restart_and_rechecks_artifact(
+    tmp_path: Path,
+) -> None:
     artifact = tmp_path / "generated.fap"
     artifact.write_bytes(b"compiled-uart-helper")
     digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
@@ -68,7 +70,8 @@ def test_implementation_store_survives_process_restart_and_rechecks_artifact(tmp
     assert restored.record == record
     assert restored.artifact_path.read_bytes() == b"compiled-uart-helper"
     assert restored.backend_payload["manifest"]["app_id"] == "hpa_gen_uart_autodetect"
-    assert second.find("internal.uart.autodetect")[0].record.implementation_id == record.implementation_id
+    matches = second.find("internal.uart.autodetect")
+    assert matches[0].record.implementation_id == record.implementation_id
 
 
 def test_implementation_store_detects_artifact_tampering(tmp_path: Path) -> None:
