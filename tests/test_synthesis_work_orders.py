@@ -119,7 +119,10 @@ def _state() -> AssessmentState:
     )
 
 
-def _planner(*, capabilities: CapabilityRegistry | None = None) -> CapabilitySynthesisWorkOrderPlanner:
+def _planner(
+    *,
+    capabilities: CapabilityRegistry | None = None,
+) -> CapabilitySynthesisWorkOrderPlanner:
     providers = HardwareProviderRegistry()
     providers.register(_StaticProvider(_flipper_descriptor()))
     return CapabilitySynthesisWorkOrderPlanner(
