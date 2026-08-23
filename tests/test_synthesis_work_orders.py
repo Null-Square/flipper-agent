@@ -167,6 +167,15 @@ def test_uart_gap_produces_deterministic_flipper_candidate_work_order() -> None:
     assert contract["human_action_required_before_execution"] is True
     assert contract["approval_required_before_execution"] is False
     assert "transmit to the target" in contract["forbidden_behavior"]
+    observations = contract["result_contract"]["observations_schema"]
+    assert observations["required_fields"] == ["sample_bytes", "candidates"]
+    assert observations["candidate_array_field"] == "candidates"
+    assert observations["candidate_required_fields"] == [
+        "baud",
+        "parity",
+        "data_bits",
+        "stop_bits",
+    ]
 
 
 def test_work_order_rejects_non_gap_steps() -> None:
