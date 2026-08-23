@@ -72,7 +72,7 @@ def _manifest() -> GeneratedAppManifest:
 
 def _artifact(tmp_path: Path, payload: bytes = b"compiled-uart-helper") -> BuildArtifact:
     project = tmp_path / "build"
-    project.mkdir(exist_ok=True)
+    project.mkdir(parents=True, exist_ok=True)
     artifact_path = project / "hpa_gen_uart_autodetect.fap"
     artifact_path.write_bytes(payload)
     return BuildArtifact(
