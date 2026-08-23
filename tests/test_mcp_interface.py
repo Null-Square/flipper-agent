@@ -43,6 +43,7 @@ def test_mcp_read_only_server_exposes_high_level_context_and_candidates(tmp_path
         "preflight_records",
     }
     assert "assessment_create" not in names
+    assert "assessment_refresh_capabilities" not in names
     assert "assessment_execute_next" not in names
     assert "assessment_recover_interrupted" not in names
     assert not any("serial" in name for name in names)
@@ -56,6 +57,7 @@ def test_mcp_mutating_tools_require_explicit_server_opt_in(tmp_path) -> None:
     names = _tool_names(build_server(_service(tmp_path), allow_execution=True))
 
     assert "assessment_create" in names
+    assert "assessment_refresh_capabilities" in names
     assert "assessment_execute_next" in names
     assert "assessment_recover_interrupted" in names
     assert "assessment_candidates" in names
