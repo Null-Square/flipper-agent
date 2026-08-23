@@ -64,7 +64,7 @@ def test_planner_builds_passive_first_plan_from_available_capabilities() -> None
     assert all(step.executable for step in state.steps)
 
 
-def test_unavailable_capabilities_are_visible_but_never_executable() -> None:
+def test_unavailable_capabilities_are_visible_as_resumable_gaps() -> None:
     simulator = SimulatedAdapter(scripted_results={"infrared.observe": {}})
     state = AssessmentPlanner().plan(
         engagement=engagement(),
@@ -78,10 +78,11 @@ def test_unavailable_capabilities_are_visible_but_never_executable() -> None:
     nfc = state.step("assessment-002:flipper.nfc.identify.v1")
 
     assert infrared.status is StepStatus.READY
-    assert nfc.status is StepStatus.BLOCKED
+    assert nfc.status is StepStatus.CAPABILITY_GAP
     assert nfc.executable is False
     assert nfc.action is None
-    assert "No connected instrument" in nfc.reason
+    assert nfc.required_capability == "wireless.nfc.identify"
+    assert "No current capability implementation" in nfc.reason
 
 
 def test_nfc_is_blocked_when_engagement_allows_observe_only() -> None:
