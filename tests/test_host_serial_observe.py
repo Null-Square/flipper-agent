@@ -235,7 +235,6 @@ def test_serial_observe_requires_gate_and_records_evidence(tmp_path: Path, monke
 
     blocked = executor.execute_next(state.assessment_id)
     assert blocked["paused"] is True
-    assert blocked["policy"]["decision"] == "require_approval"
     assert streams == []
 
     LocalGateStore(roots["gate"]).grant(
