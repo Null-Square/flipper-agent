@@ -134,6 +134,58 @@ Initial fixture:
 
 Each capability verification should assert an expected observation from the fixture. The absence of random environmental traffic must never be used as the success condition.
 
+### Host-only serial target HIL
+
+The first target-side HIL proof uses a low-cost owned development board that continuously emits a deterministic banner over USB serial. This validates that the host itself can assess a connected target before any external pentest appliance is required.
+
+Install the test and serial extras:
+
+```bash
+pip install -e '.[dev,serial]'
+```
+
+Configure a board that repeatedly prints a short known banner such as `NULLSQUARE-HIL-READY`, then run:
+
+```bash
+HPA_HIL=1 \
+HPA_SERIAL_TARGET_APPROVE=1 \
+HPA_SERIAL_TARGET_PORT=/dev/ttyACM0 \
+HPA_SERIAL_TARGET_BAUD=115200 \
+HPA_SERIAL_TARGET_EXPECT=NULLSQUARE-HIL-READY \
+pytest -q -m hil tests/test_hil_smoke.py -k serial_target
+```
+
+Optional bounded capture settings are:
+
+```text
+HPA_SERIAL_TARGET_DURATION       default 1.0, maximum 5.0 seconds
+HPA_SERIAL_TARGET_MAX_BYTES      default 4096, maximum 65536 bytes
+```
+
+`HPA_SERIAL_TARGET_APPROVE=1` is a deliberate operator opt-in for the HIL fixture. The test creates one exact temporary approval grant for the serial-observation step only. The production runtime still requires normal operator-controlled gate grants; MCP cannot self-grant approval.
+
+The serial HIL test exercises the full domain path:
+
+```text
+real host discovery
+  -> target association
+  -> interface.serial.inspect
+  -> approval-required pause
+  -> exact one-shot HIL approval
+  -> interface.serial.observe
+  -> host.local route
+  -> bounded capture
+  -> durable evidence assertions
+```
+
+It verifies that the selected device is present in real discovery, metadata inspection routes to `host.local`, live observation remains `INTERACT`, execution pauses before approval, captured data contains the known banner, byte/time bounds are respected, and the evidence record is linked to the target/capability/provider.
+
+Opening a USB serial interface may pulse DTR/RTS or reset some targets depending on host driver, USB bridge, bootloader, and board wiring. Use a disposable/owned development fixture and do not run this profile against production hardware without understanding that behavior.
+
+If `HPA_FLIPPER_PORT` is also configured, the same HIL file performs a second complete serial-target assessment while Flipper is present. The serial TestCases must still route to `host.local`; Flipper augments the available provider set rather than replacing the host route.
+
+Normal CI runs `pytest -m 'not hil'`, so none of these tests opens physical hardware on hosted runners.
+
 ## 5. Dedicated HIL runner
 
 After the local fixture proves stable, connect it to a dedicated private self-hosted CI runner.
