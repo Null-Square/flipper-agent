@@ -5,11 +5,13 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import hardware_pentest.service.execution as execution_module
+import hardware_pentest.service.facade as facade_module
 from hardware_pentest.adapters.host_serial import HostSerialMetadataAdapter
 from hardware_pentest.core.engagement_store import LocalEngagementStore
 from hardware_pentest.core.models import Action, ActionClass, Engagement, ExecutionStatus, Target
 from hardware_pentest.evidence.store import LocalEvidenceStore
 from hardware_pentest.service.execution import HarnessAssessmentExecutor, InstrumentSelection
+from hardware_pentest.service.facade import HardwarePentestService
 from hardware_pentest.service.planning import HarnessAssessmentPlanner
 
 
@@ -191,3 +193,33 @@ def test_missing_serial_backend_becomes_capability_gap(tmp_path: Path, monkeypat
     assert step.status.value == "capability_gap"
     assert step.required_capability == "interface.serial.inspect"
     assert step.instrument_id is None
+
+
+def test_service_discovery_reports_unavailable_serial_backend_without_crashing(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(facade_module, "serial_discovery_available", lambda: False)
+
+    def _unexpected_call():
+        raise AssertionError("serial discovery backend should not be called when unavailable")
+
+    monkeypatch.setattr(facade_module, "serial_ports", _unexpected_call)
+    monkeypatch.setattr(facade_module, "discover_flipper_ports", _unexpected_call)
+    service = HardwarePentestService(
+        assessment_root=tmp_path / "assessments",
+        engagement_root=tmp_path / "engagements",
+        evidence_root=tmp_path / "evidence",
+        verification_root=tmp_path / "verification",
+        preflight_root=tmp_path / "preflight",
+        gate_root=tmp_path / "gates",
+        implementation_root=tmp_path / "implementations",
+        artifact_scope_root=tmp_path / "artifact-scopes",
+    )
+
+    result = service.hardware_discover()
+
+    assert result["serial_discovery_available"] is False
+    assert result["serial_ports"] == []
+    assert result["flipper_candidates"] == []
+    assert result["providers"][0]["identity"]["provider_id"] == "host.local"
