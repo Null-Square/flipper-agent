@@ -32,10 +32,11 @@ def test_host_provider_is_stable_provider_zero() -> None:
 def test_host_descriptor_round_trips_with_stable_fingerprint() -> None:
     descriptor = HostHardwareProvider(snapshot=_snapshot()).describe_hardware()
     restored = HardwareDescriptor.from_dict(descriptor.to_dict())
+    repeated = HostHardwareProvider(snapshot=_snapshot()).describe_hardware()
 
     assert restored.to_dict() == descriptor.to_dict()
     assert restored.fingerprint == descriptor.fingerprint
-    assert HostHardwareProvider(snapshot=_snapshot()).describe_hardware().fingerprint == descriptor.fingerprint
+    assert repeated.fingerprint == descriptor.fingerprint
 
 
 def test_host_descriptor_does_not_claim_raw_shell_or_arbitrary_paths() -> None:
