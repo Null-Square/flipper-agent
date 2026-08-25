@@ -39,6 +39,7 @@ def test_mcp_read_only_server_exposes_high_level_context_and_candidates(tmp_path
         "assessment_list",
         "assessment_context",
         "assessment_candidates",
+        "assessment_coverage",
         "implementation_records",
         "verification_records",
         "preflight_records",
@@ -65,6 +66,7 @@ def test_mcp_mutating_tools_require_explicit_server_opt_in(tmp_path) -> None:
     assert "assessment_execute_next" in names
     assert "assessment_recover_interrupted" in names
     assert "assessment_candidates" in names
+    assert "assessment_coverage" in names
     assert "implementation_records" in names
     assert "gate_grant" not in names
     assert "engagement_import" not in names
