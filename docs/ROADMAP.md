@@ -2,103 +2,211 @@
 
 ## North star
 
-Build a hardware-native pentesting runtime that can use **programmable physical hardware as a substrate**, not merely call a fixed set of prebuilt device functions.
+Build a hardware-native pentesting runtime that can assess an authorized embedded/IoT target with **whatever compatible capabilities are currently available**.
 
-The agent should be able to:
+The agent is the pentester. The host computer and connected instruments are providers. The target is the system being assessed.
+
+The runtime should be able to:
 
 ```text
-understand target
-   -> identify security question
-   -> determine required physical capability
-   -> inspect available hardware providers
-   -> reuse / compose / synthesize an implementation
-   -> deploy and execute it
-   -> collect evidence
-   -> refine the assessment
+understand target/component graph
+  -> choose security question / TestCase
+  -> determine required capability
+  -> inspect available providers
+  -> resolve implementation
+       reuse / compose / specialist / synthesize
+  -> satisfy physical/operator gates
+  -> execute
+  -> collect evidence
+  -> update target understanding
+  -> continue assessment
 ```
 
-Flipper Zero is the first reference provider because it gives us a practical platform to prove the full lifecycle. It must not become the boundary of the architecture.
+The roadmap is organized around **proofs of architecture and assessment behavior**, not around accumulating device integrations.
 
-The generic LLM harness is intentionally outside this roadmap. Codex, Null-AI or another harness may own inference, generic context management and the agent tool loop. Hardware Pentest Agent owns durable pentest state, hardware semantics, methodology, implementations, physical execution and evidence.
-
-See `PROGRAMMABLE_HARDWARE.md`.
+A new provider is valuable only when it proves a missing architectural property or materially expands a real assessment.
 
 ---
 
-## Phase A — Harness kernel and Flipper reference provider
+## Product invariants
 
-### Milestone A0 — Core domain foundation — **done**
+These rules apply to every phase.
 
-Deliverables:
+### Target and provider are separate roles
 
-- engagement, target, instrument, capability, action, evidence, observation and finding models;
-- capability registry;
-- deterministic policy decisions;
-- adapter protocol;
-- simulator;
-- local durable state and evidence;
-- routing and policy tests.
+A drone, camera, router, controller, lock, unknown PCB, or development board under test is a target.
 
-Architectural acceptance:
+The host computer, Flipper Zero, debug probe, logic analyzer, programmable board, SDR, Proxmark3, or other controllable instrument is a provider.
 
-- assessment logic contains no Flipper command strings;
-- denied actions fail below the model layer;
-- the simulator and real adapters implement the same contracts.
+A physical device can be both only when the roles are explicitly authorized and modeled separately.
 
-### Milestone A1 — Flipper transport and typed adapter — **done in software**
+### Capability semantics are vendor-neutral
 
-Deliverables:
+Assessment logic asks for capabilities such as:
 
-- USB discovery and identity;
-- typed Flipper transport operations;
-- connection/timeout/error handling;
-- capability registration;
-- app installation/loader support;
-- transport contract tests and transcript replay.
+```text
+artifact.firmware.inspect
+interface.usb.enumerate
+internal.uart.observe
+internal.spi.capture
+debug.swd.detect
+firmware.extract
+protocol.decode
+wireless.nfc.identify
+```
 
-Next hardening:
+It does not ask for vendor commands.
 
-- introduce structured Flipper protobuf RPC where it provides a stronger control surface;
-- support transport selection without leaking transport details into capability semantics.
+### Capability availability is dynamic
 
-### Milestone A2 — Flipper/Marauder capability slice — **implemented; physical verification incomplete**
+```text
+host only
+  -> baseline capabilities
 
-Implemented families include native Flipper observation/inspection and Marauder Wi-Fi observation plus approved network-discovery operations.
++ Flipper
+  -> baseline + Flipper capabilities
 
-Acceptance still requires real HIL evidence. Software mocks and recorded transcripts never satisfy this milestone alone.
++ debug probe
+  -> previous + debug capabilities
 
-### Milestone A3 — Persistent assessment engine — **done**
++ logic analyzer
+  -> previous + capture capabilities
+```
 
-Deliverables:
+Adding or removing a provider changes what the agent can do, not what the agent is.
 
-- versioned TestCase catalog;
-- passive-first planning;
+### Inapplicable providers are ignored
+
+The system should not use a connected tool simply because it exists. Provider selection must be justified by the target, TestCase, physical requirements, evidence quality, risk, and operator state.
+
+### Missing capability is a valid result
+
+If no available provider can satisfy a physical requirement, return a capability/setup gap. Do not create a raw-command escape hatch or hallucinate capability.
+
+### Physical constraints are first-class
+
+Electrical domain, signal direction, target power state, bus ownership, contention risk, recovery path, probe placement, and operator action can block execution even when a software implementation exists.
+
+### Evidence survives the model session
+
+Assessment state, provider state, implementation provenance, evidence, observations, and findings remain durable and independent of outer-agent conversation memory.
+
+---
+
+# Phase 0 — Existing foundation
+
+**Status:** substantially implemented in software; physical verification still incomplete in important areas.
+
+This phase established:
+
+- engagement, target, component, capability, action, evidence, observation, and finding models;
+- deterministic policy/action gates;
+- capability registry and adapter contracts;
+- simulator and transcript replay;
 - persistent assessment state;
-- pause/resume/recovery;
-- evidence-linked observations/findings;
-- deterministic candidate-test semantics.
+- TestCase catalog and deterministic candidate planning;
+- harness-neutral Python service;
+- MCP/CLI surfaces;
+- Flipper transport and typed operations;
+- Flipper/Marauder capability families;
+- generated FAP build/deploy/evidence pipeline;
+- `HardwareDescriptor` domain foundation;
+- provider registry and Flipper provider implementation;
+- synthesis contracts, routing, HIL records, and promotion model.
 
-### Milestone A4 — Harness-neutral service and MCP — **done for current surface**
+Acceptance already achieved in software:
 
-Deliverables:
+- assessment logic does not need Flipper command strings;
+- policy is below the model layer;
+- simulator and real adapters share domain contracts;
+- outer harness replacement does not require a second assessment state model.
 
-- Python service facade;
-- MCP stdio and local Streamable HTTP;
-- durable assessment context;
-- deterministic assessment creation/candidates;
-- high-level one-step execution;
-- persisted engagement scope;
-- one-shot operator gate grants;
-- no dependence on outer-agent conversation memory.
+Outstanding proof:
+
+- real hardware behavior must validate the software architecture.
+
+---
+
+# Phase 1 — Host provider baseline
+
+## Goal
+
+Make the local host environment **provider #0** so the agent remains useful without Flipper or any other external security appliance.
+
+The host provider is not unrestricted shell access. It is a registry of bounded, typed, policy-controlled capabilities backed by local resources and tools.
+
+## Milestone 1.1 — Host descriptor
+
+Create a normalized host/provider description covering relevant resources such as:
+
+- operating system and architecture;
+- USB access;
+- serial interfaces;
+- network interfaces;
+- available analysis/debug/build toolchains;
+- supported artifact types;
+- local deployment methods where relevant;
+- evidence/output channels;
+- explicit limitations and unavailable privileges.
 
 Acceptance:
 
-- Codex/Null-AI/another MCP client can use the same runtime without rewriting policy, state or device adapters;
-- replacing the outer harness does not change evidence semantics.
+- the runtime can describe host capabilities through the same provider discovery surface used for physical tools;
+- an outer agent does not need to know which local command implements a capability.
 
-### Milestone A5 — Real bench certification — **next physical milestone**
+## Milestone 1.2 — First bounded host capabilities
 
-Goal: prove that the software contracts survive the real Flipper + Wi-Fi board stack.
+Start with safe, high-value capabilities that make hardware assessment useful with minimal equipment.
+
+Candidate families:
+
+```text
+interface.usb.enumerate
+interface.serial.enumerate
+artifact.firmware.inspect
+artifact.binary.identify
+artifact.strings.extract
+artifact.filesystem.inspect
+network.interface.inspect
+```
+
+Add low-level debugger/flashing capabilities only behind explicit compatibility and policy gates.
+
+Acceptance:
+
+- a connected target exposing USB, serial, network, or firmware artifacts can produce evidence without Flipper;
+- execution is typed and evidence-producing rather than generic shell passthrough.
+
+## Milestone 1.3 — Host-only assessment proof
+
+Use an authorized development board or simple embedded target.
+
+Reference flow:
+
+```text
+target connected
+  -> discover USB/serial surface
+  -> create target/component state
+  -> run applicable host capabilities
+  -> collect evidence
+  -> produce observations
+  -> identify what cannot yet be tested
+```
+
+Acceptance:
+
+- a useful assessment progresses with no external provider connected;
+- unsupported tests resolve to explicit capability/setup gaps.
+
+---
+
+# Phase 2 — Flipper as external capability augmentation
+
+## Goal
+
+Prove that Flipper is an optional provider that extends the same assessment rather than defining it.
+
+## Milestone 2.1 — Real Flipper + Marauder certification
 
 Required baseline session:
 
@@ -117,87 +225,114 @@ Flipper identity / firmware
 Acceptance:
 
 - deterministic physical smoke command reports stack health;
-- expected real-device transcripts are committed in sanitized replay form;
-- release claims are backed by hardware verification records.
+- release claims are backed by hardware-verification records;
+- replay fixtures never masquerade as real HIL.
+
+## Milestone 2.2 — Capability augmentation proof
+
+Run one assessment first with the host provider only, then attach Flipper and resume the same durable assessment.
+
+Acceptance:
+
+- the target and TestCases do not change merely because Flipper appears;
+- available capability routes expand after discovery;
+- newly applicable tests become candidates;
+- unrelated Flipper capabilities are not selected;
+- evidence continuity is preserved across provider attachment.
+
+This is the first strong proof that the product is **Hardware Pentest Agent**, not Flipper Agent.
 
 ---
 
-## Phase B — Generalize from instruments to programmable hardware providers
+# Phase 3 — Provider independence
 
-### Milestone B1 — `HardwareDescriptor`
+## Goal
 
-Goal: describe what a board/tool can physically and computationally provide independently of vendor command syntax.
+Prove that a capability is not synonymous with one device implementation.
 
-Descriptor areas:
+## Milestone 3.1 — Capability requirement model
 
-- identity / revision / MCU or SoC family;
-- architecture and relevant compute/memory limits;
-- GPIO/electrical domain;
-- UART/SPI/I2C/CAN and other buses;
-- Wi-Fi/BLE/NFC/Sub-GHz/SDR resources;
-- USB roles;
-- timers/ADC/DAC/DMA/PIO where relevant;
-- debug/programming interfaces;
-- installed firmware/runtime state;
-- build toolchains;
-- artifact types;
-- deployment/recovery methods;
-- evidence channels;
-- verified limitations.
+Strengthen capability requirements so routing can account for:
 
-Deliverables:
-
-- normalized descriptor schema;
-- descriptor validation;
-- provider discovery contract;
-- Flipper descriptor implementation;
-- descriptor snapshots in evidence/provenance where relevant.
+- physical interface kind;
+- electrical domain;
+- directionality;
+- timing/sampling requirements;
+- bandwidth;
+- read/interact/transmit/modify needs;
+- runtime bounds;
+- evidence schema;
+- operator setup;
+- recovery expectations.
 
 Acceptance:
 
-- core planning can ask what hardware resources are available without knowing the device vendor;
-- Flipper-specific details are isolated behind provider/backend implementations.
+- provider compatibility is explained in domain terms rather than vendor names.
 
-### Milestone B2 — Physical capability graph
+## Milestone 3.2 — Same capability, different provider
 
-Goal: move beyond a flat capability registry and represent what capabilities can be implemented from available physical resources.
+Choose one capability with at least two materially different implementation routes.
 
-The graph should answer:
+Good candidate:
 
-- which verified capability already exists;
-- which lower-level primitives can compose a solution;
-- which external tool can satisfy the requirement;
-- which provider can host synthesized code;
-- what timing/electrical/bandwidth constraints apply;
-- what operator setup and evidence channel are required.
+```text
+internal.uart.observe
+```
+
+Possible routes may include:
+
+- a compatible host serial path;
+- Flipper GPIO/UART implementation;
+- later a programmable board or logic analyzer route.
 
 Acceptance:
 
-- the resolver can explain *why* a provider/implementation was selected;
-- generation is not chosen when an existing/composed implementation is sufficient.
+- the TestCase semantics remain unchanged;
+- the resolver can select different implementations based on available hardware and constraints;
+- evidence is normalized enough that the assessment can interpret either route;
+- selection is explainable.
 
-### Milestone B3 — Generalize `CapabilitySynthesisRequest`
+## Milestone 3.3 — Second materially different provider
 
-Goal: remove Flipper/FAP assumptions from the synthesis intent model.
+Only after the previous proof, add the provider that best stresses the abstraction.
 
-Generic request fields should include:
+Preferred candidates:
+
+- RP2040 for programmable timing/PIO;
+- logic analyzer/sigrok for high-fidelity bus capture;
+- OpenOCD-compatible debug probe for SWD/JTAG;
+- ESP32 when a radio/network capability is the best next proof.
+
+Do not choose the next provider because it is popular. Choose it because it exposes a capability or constraint the existing providers cannot prove.
+
+---
+
+# Phase 4 — Capability-gap handling and executable capability memory
+
+## Goal
+
+Prove the system can encounter a missing capability during an assessment, represent the gap correctly, and create a bounded implementation when synthesis is justified.
+
+## Milestone 4.1 — Generalized synthesis request
+
+A `CapabilitySynthesisRequest` should be hardware-neutral and include:
 
 ```text
 objective
 required physical interfaces
-read/interact/transmit/modify needs
-timing/bandwidth constraints
+electrical/timing/bandwidth constraints
+action class
 runtime bounds
 expected evidence schema
 target constraints
 candidate providers
 ```
 
-The request should select a backend only after capability requirements are understood.
+The synthesis backend is chosen only after these requirements are known.
 
-### Milestone B4 — Build/deployment provider contracts
+## Milestone 4.2 — Build/deployment/evidence contracts
 
-Separate:
+Keep separate contracts for:
 
 ```text
 CapabilitySynthesisBackend
@@ -206,87 +341,26 @@ DeploymentProvider
 EvidenceChannel
 ```
 
-First implementations:
+Flipper FAP/uFBT remains backend #1.
 
-- Flipper FAP / uFBT;
-- Flipper storage/loader and later RPC-assisted deployment.
+Future backends may include RP2040, ESP32, generated sigrok decoders, OpenOCD/GDB automation artifacts, or bounded host-side tools.
 
-Next candidate implementations:
-
-- ESP-IDF / PlatformIO + esptool;
-- RP2040 Pico SDK / PIO + UF2;
-- STM32/Zephyr + DFU/OpenOCD;
-- bounded Linux/SBC build and execution;
-- sigrok decoder generation;
-- OpenOCD/GDB automation artifacts.
-
-Acceptance:
-
-- assessment/synthesis logic contains no direct toolchain command construction;
-- backend provenance is immutable and reproducible.
-
-### Milestone B5 — Refactor generated FAPs as backend #1
-
-Goal: prove the generalized synthesis contracts with the functionality we already have.
-
-Deliverables:
-
-- existing FAP source policy/build/runtime moved behind generic synthesis interfaces;
-- Flipper-specific source/runtime rules remain in the Flipper backend;
-- common implementation metadata for source/artifact hashes, descriptor compatibility, evidence schema and HIL records.
-
-Acceptance:
-
-- no behavior regression in current generated-FAP tests;
-- generic runtime can describe the FAP as one capability implementation among future backends.
-
-### Milestone B6 — Persist executable capability memory
-
-Goal: make newly created physical capabilities reusable across agent sessions.
-
-Store:
-
-- normalized capability ID;
-- synthesis request;
-- source and artifact hashes;
-- hardware-descriptor compatibility;
-- toolchain/version constraints;
-- evidence schema;
-- known limitations;
-- HIL verification records;
-- assessment usage history.
-
-Lifecycle:
-
-```text
-generated -> implemented -> HIL verified -> reusable route
-```
-
-Acceptance:
-
-- a fresh outer-agent session can discover and reuse an old verified synthesized implementation without relying on conversation memory.
-
----
-
-## Phase C — Prove adaptive physical capability creation
-
-### Milestone C1 — Flipper capability-gap experiment
-
-This is the most important Flipper milestone after baseline HIL.
-
-Goal: solve a physical problem that was **not pre-implemented as a fixed capability handler**.
+## Milestone 4.3 — Real capability-gap experiment
 
 Reference scenario:
 
 ```text
 unknown authorized PCB
-  -> likely UART header
-  -> required capability: internal.uart.autodetect
-  -> no exact existing route
-  -> resolver chooses Flipper resources
-  -> synthesize bounded FAP
-  -> deploy
-  -> collect structured evidence
+  -> suspected UART header
+  -> need internal.uart.autodetect
+  -> no exact verified route
+  -> derive physical requirements
+  -> choose compatible provider
+  -> synthesize bounded implementation
+  -> build/deploy
+  -> operator setup
+  -> execute
+  -> collect evidence
   -> HIL verify
   -> persist implementation
   -> resume assessment
@@ -294,72 +368,102 @@ unknown authorized PCB
 
 Acceptance:
 
-- the missing implementation is created during the assessment lifecycle;
+- the missing implementation is created inside the assessment lifecycle;
 - source/build/deployment/evidence are reproducible;
-- a later assessment can reuse the promoted implementation.
-
-### Milestone C2 — Second programmable provider
-
-Goal: prove that synthesis is not a renamed FAP generator.
-
-Preferred candidates are a materially different provider such as RP2040 or ESP32 because they expose different compute/timing/radio resources and require different toolchains/deployment paths.
-
-Example proof:
-
-- create a bus/sniffing or timing capability on RP2040 PIO that is not practical on the Flipper implementation;
-- route the same capability need to the better provider without changing the TestCase semantics.
-
-Acceptance:
-
-- same generalized synthesis request can resolve to different backends;
-- provider selection is explainable and evidence-linked.
-
-### Milestone C3 — Specialist provider proof
-
-Add one non-general-purpose specialist path:
-
-- Proxmark3 for RFID/NFC, or
-- sigrok/logic analyzer for digital capture, or
-- OpenOCD-compatible probe for SWD/JTAG.
-
-This proves the resolver can choose between “synthesize on a board” and “use a mature specialist instrument.”
+- compilation alone cannot mark the implementation verified;
+- a fresh session can reuse the promoted implementation without model memory.
 
 ---
 
-## Phase D — Real target classes
+# Phase 5 — Physical safety and connection planning
 
-### Milestone D1 — Camera hardware assessment
+## Goal
 
-Goal: assess a lab-owned embedded camera as a multi-component target rather than a single device command sequence.
+Make low-level electrical safety and operator setup explicit enough that the agent can reason about what is safe to observe or drive.
 
-Potential component graph:
+## Milestone 5.1 — Physical connection model
+
+Represent facts such as:
+
+- pin/test-point identity;
+- measured voltage;
+- ground/reference confirmation;
+- signal direction hypothesis;
+- pull-up/pull-down state;
+- powered/unpowered state;
+- shared bus ownership;
+- contention risk;
+- required level shifting/isolation;
+- probe/cable placement;
+- recovery action.
+
+## Milestone 5.2 — Passive-before-active gate
+
+Reference behavior:
 
 ```text
-camera
-  +-- Wi-Fi/network
-  +-- UART/debug header
-  +-- SPI flash
-  +-- removable storage
-  +-- image subsystem
-  +-- firmware/update path
+pin 1 -> GND             confirmed
+pin 2 -> 3.31 V          measured
+pin 3 -> candidate TX    observe allowed
+pin 4 -> candidate RX    drive blocked
 ```
-
-The assessment should mix existing capabilities, specialist tools and synthesized helpers when required.
 
 Acceptance:
 
-- target/component graph evolves from evidence;
-- at least one capability route is selected dynamically from available providers;
-- no camera-specific agent loop is required.
+- active actions can be blocked by unresolved physical facts even when the provider technically supports the operation;
+- operator actions are durable state, not prompt text.
 
-### Milestone D2 — Drone hardware assessment
+---
 
-Goal: prove the target model scales to a more complex embedded system.
+# Phase 6 — Real target-class proofs
+
+These milestones prove the target model and methodology, not device-specific automation.
+
+## Milestone 6.1 — Unknown PCB
+
+Flow:
+
+```text
+human/visual inspection
+  -> component/test-point hypotheses
+  -> electrical confirmation
+  -> passive bus/debug detection
+  -> protocol identification
+  -> firmware acquisition
+  -> targeted follow-up experiments
+```
+
+Acceptance:
+
+- the component graph evolves from evidence;
+- the assessment can proceed incrementally from very little initial knowledge.
+
+## Milestone 6.2 — Embedded camera/router-class target
+
+Potential components:
+
+```text
+device
+  +-- SoC / MCU
+  +-- Wi-Fi/Ethernet
+  +-- UART/debug header
+  +-- SPI flash
+  +-- removable storage
+  +-- firmware/update path
+```
+
+Acceptance:
+
+- one assessment mixes host capabilities and at least one external provider;
+- provider routing is dynamic;
+- no target-specific agent loop is required.
+
+## Milestone 6.3 — Drone
 
 Potential components:
 
 - flight controller;
-- RF link;
+- radio link;
 - GNSS;
 - ESC/CAN/UART buses;
 - storage;
@@ -369,98 +473,92 @@ Potential components:
 
 Acceptance:
 
-- one assessment state spans multiple physical components/providers;
-- the methodology remains generic rather than becoming drone-specific.
-
-### Milestone D3 — Unknown PCB workflow
-
-Goal: support progressive low-level discovery where little is known initially.
-
-Flow:
-
-```text
-visual/human inspection
-  -> component/test-point hypotheses
-  -> electrical confirmation
-  -> passive bus/debug detection
-  -> protocol identification
-  -> firmware acquisition
-  -> deeper targeted experiments
-```
-
-Vision-assisted PCB understanding may become one input, but physical measurements remain evidence.
+- one assessment state spans multiple components and providers;
+- irrelevant connected providers are ignored;
+- methodology remains generic rather than becoming drone-specific.
 
 ---
 
-## Phase E — Multi-provider hardware pentester
+# Phase 7 — Multi-provider lab runtime
 
-### Milestone E1 — Multi-provider assessment graph
+## Goal
+
+Operate a real hardware-security bench where the agent can discover and select among several connected providers.
 
 Example:
 
 ```text
-Flipper        -> broad wireless / quick physical interaction
-RP2040/ESP32   -> synthesized timing/bus/radio helper
-Proxmark3      -> deeper RFID/NFC analysis
-logic analyzer -> high-fidelity bus capture
-OpenOCD probe  -> authorized debug checks
-firmware tools -> artifact analysis
+host             -> artifact/USB/serial/network analysis
+Flipper          -> broad wireless / selected GPIO interaction
+RP2040/ESP32     -> programmable timing/bus/radio helper
+logic analyzer   -> high-fidelity digital capture
+debug probe      -> authorized SWD/JTAG checks
+Proxmark3        -> deeper RFID/NFC
+SDR              -> RF capture/analysis where authorized
 ```
 
 Acceptance:
 
 - one target assessment routes across providers without planner-specific device branches;
-- evidence/provenance remains continuous across transitions.
-
-### Milestone E2 — Harness evaluations
-
-Run identical assessment scenarios through different outer harnesses:
-
-- Codex;
-- Null-AI;
-- another MCP-capable harness;
-- future native orchestrator if needed.
-
-Compare:
-
-- test coverage;
-- unnecessary actions;
-- capability selection;
-- evidence quality;
-- findings;
-- recovery behavior;
-- synthesized-tool quality.
-
-The purpose is to keep domain behavior strong without coupling the product to one LLM harness.
-
-### Milestone E3 — Hosted/remote bench operation
-
-Goal: allow an authorized online harness to operate a local/remote hardware lab through an authenticated service boundary.
-
-The hardware daemon remains local to the bench. Remote connectivity is a transport/deployment concern, not a new execution architecture.
+- evidence/provenance remains continuous;
+- provider addition/removal is reflected dynamically;
+- the resolver explains why each provider was selected.
 
 ---
 
-## Phase F — Broader embedded-security workflows
+# Phase 8 — Remote hardware node
 
-Future providers/integrations may include:
+## Goal
 
+Separate the reasoning client from the physical bench without changing domain semantics.
+
+A Linux SBC such as a Raspberry Pi can act as a **hardware execution node** hosting the local runtime and attached instruments.
+
+```text
+outer authorized harness
+        |
+ authenticated domain protocol
+        |
+ Hardware Pentest Node
+ Linux SBC / bench host
+        |
+   +----+-----------------------------+
+   |          |          |            |
+Flipper    debugger   analyzer       target
+```
+
+The node is not merely another pentest capability. It is a deployment topology for providers and the local runtime.
+
+Acceptance:
+
+- remote connectivity does not expose generic shell/serial control to the outer agent;
+- policy, gates, evidence, provider semantics, and assessment state remain identical to local operation.
+
+---
+
+# Future provider families
+
+Only add these when they support a validated capability need or architecture proof:
+
+- RP2040 / ESP32 / STM32 programmable boards;
+- OpenOCD-compatible probes;
+- logic analyzers / sigrok;
+- Proxmark3-class RFID/NFC tools;
 - SDRs such as HackRF-class devices;
 - ChipWhisperer-class side-channel/fault-injection hardware;
 - CAN/LIN tooling;
 - USB protocol hardware;
-- firmware extraction/programmers;
-- EMBA/FACT/Binwalk-compatible artifact analysis;
-- emulation/rehosting;
-- automated fixture control and lab robotics.
+- firmware programmers/extractors;
+- emulation/rehosting environments;
+- automated fixtures and lab robotics.
 
-Do not reimplement mature specialist platforms when they can be integrated behind a provider/adapter contract.
+Prefer integrating mature specialist systems behind provider/adapter contracts over reimplementing them.
 
 ---
 
-## Release discipline
+# Release discipline
 
-Do not advertise a planned capability as implemented.
+Do not advertise planned capability as implemented.
 
 Use capability maturity consistently:
 
@@ -470,8 +568,12 @@ Use capability maturity consistently:
 - `hardware_verified`;
 - `assessment_verified`.
 
-For synthesized implementations, also distinguish artifact/build success from physical verification.
+For synthesized implementations, artifact/build success remains distinct from physical verification.
 
-The long-term success criterion is not the number of hard-coded tools. It is:
+## Long-term success criterion
 
-> **How reliably can the agent turn an authorized physical security question into a reproducible experiment using whatever compatible hardware is available?**
+The product is successful when it can reliably answer:
+
+> **Given this authorized hardware target and the providers available right now, what can I test, how should I test it safely, what can I prove from evidence, and what additional capability is required for the tests I cannot yet perform?**
+
+The number of integrated tools is secondary.
