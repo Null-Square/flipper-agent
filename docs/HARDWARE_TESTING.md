@@ -138,6 +138,8 @@ Each capability verification should assert an expected observation from the fixt
 
 The first target-side HIL proof uses a low-cost owned development board that continuously emits a deterministic banner over USB serial. This validates that the host itself can assess a connected target before any external pentest appliance is required.
 
+A ready-to-flash deterministic fixture is provided under `examples/hil/serial_banner/`, with both Arduino-compatible and MicroPython variants. Both emit `NULLSQUARE-HIL-READY` repeatedly; choose whichever matches the owned development board.
+
 Install the test and serial extras:
 
 ```bash
