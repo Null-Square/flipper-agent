@@ -19,6 +19,9 @@ dependencies = [
 serial = [
   "pyserial>=3.5",
 ]
+usb = [
+  "pyusb>=1.3",
+]
 flipper = [
   "pyserial>=3.5",
 ]
