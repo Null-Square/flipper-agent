@@ -4,11 +4,13 @@ import hashlib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import hardware_pentest.service.facade as facade_module
 from hardware_pentest.core.artifact_scope import LocalArtifactScopeStore
 from hardware_pentest.core.engagement_store import LocalEngagementStore
 from hardware_pentest.core.models import ActionClass, Engagement, ExecutionStatus, Target
 from hardware_pentest.evidence.store import LocalEvidenceStore
 from hardware_pentest.service.execution import HarnessAssessmentExecutor, InstrumentSelection
+from hardware_pentest.service.facade import HardwarePentestService
 from hardware_pentest.service.planning import HarnessAssessmentPlanner
 
 
@@ -62,9 +64,7 @@ def test_host_artifact_route_is_additive_and_produces_evidence(tmp_path: Path) -
         assessment_id="assessment-host-route",
     )
 
-    artifact_step = state.step(
-        "assessment-host-route:artifact.firmware.inspect.v1"
-    )
+    artifact_step = state.step("assessment-host-route:artifact.firmware.inspect.v1")
     assert artifact_step.instrument_id == "host.local"
     assert artifact_step.status.value == "ready"
     assert artifact_step.action is not None
@@ -94,3 +94,25 @@ def test_host_artifact_route_is_additive_and_produces_evidence(tmp_path: Path) -
     assert record.instrument_id == "host.local"
     assert record.normalized_inputs == {"artifact_path": "drone-fw.bin"}
     assert record.normalized_observation["sha256"] == hashlib.sha256(content).hexdigest()
+
+
+def test_service_discovery_always_reports_host_provider(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(facade_module, "serial_ports", lambda: ())
+    monkeypatch.setattr(facade_module, "discover_flipper_ports", lambda: [])
+    service = HardwarePentestService(
+        assessment_root=tmp_path / "assessments",
+        engagement_root=tmp_path / "engagements",
+        evidence_root=tmp_path / "evidence",
+        verification_root=tmp_path / "verification",
+        preflight_root=tmp_path / "preflight",
+        gate_root=tmp_path / "gates",
+        implementation_root=tmp_path / "implementations",
+        artifact_scope_root=tmp_path / "artifact-scopes",
+    )
+
+    result = service.hardware_discover()
+
+    assert result["side_effects"] == "none"
+    assert result["serial_ports"] == []
+    assert result["flipper_candidates"] == []
+    assert result["providers"][0]["identity"]["provider_id"] == "host.local"
