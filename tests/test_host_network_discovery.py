@@ -174,7 +174,7 @@ def test_service_discovery_exposes_passive_network_candidates(tmp_path: Path, mo
     assert result["network_side_effects"] == "host-state-only; no discovery packets sent"
 
 
-def test_interface_backend_is_explicitly_unavailable_without_optional_dependency(monkeypatch) -> None:
+def test_interface_backend_unavailable_without_optional_dependency(monkeypatch) -> None:
     monkeypatch.setattr(network_module, "psutil", None)
 
     assert network_module.network_interface_discovery_available() is False
