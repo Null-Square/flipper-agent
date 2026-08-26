@@ -22,6 +22,9 @@ serial = [
 usb = [
   "pyusb>=1.3",
 ]
+network = [
+  "psutil>=6.0",
+]
 flipper = [
   "pyserial>=3.5",
 ]
