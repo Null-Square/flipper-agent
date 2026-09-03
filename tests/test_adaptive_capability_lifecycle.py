@@ -35,6 +35,7 @@ from hardware_pentest.core.registry import CapabilityRegistry
 from hardware_pentest.synthesis.hil import ImplementationHILRecorder
 from hardware_pentest.synthesis.models import CapabilityImplementationRecord
 from hardware_pentest.synthesis.store import LocalCapabilityImplementationStore
+from hardware_pentest.verification.models import VerificationCheckResult
 from hardware_pentest.verification.store import LocalVerificationStore
 
 
@@ -229,6 +230,16 @@ def _identity(provider_id: str) -> InstrumentIdentity:
     )
 
 
+def _passing_checks() -> tuple[VerificationCheckResult, ...]:
+    return (
+        VerificationCheckResult(
+            check_id="fixture.result_validated",
+            passed=True,
+            detail="test fixture validates a physical-result binding",
+        ),
+    )
+
+
 def test_hil_recorder_binds_evidence_to_exact_implementation_and_descriptor(tmp_path) -> None:
     provider_id = "flipper:serial-123"
     descriptor = _descriptor(provider_id)
@@ -268,8 +279,10 @@ def test_hil_recorder_binds_evidence_to_exact_implementation_and_descriptor(tmp_
             descriptor=descriptor,
             identity=_identity(provider_id),
             evidence_path=evidence,
-            passed=True,
             operator_confirmed=False,
+            procedure_id="test.fixture.binding",
+            procedure_version="1",
+            checks=_passing_checks(),
         )
 
     record = recorder.record(
@@ -277,10 +290,13 @@ def test_hil_recorder_binds_evidence_to_exact_implementation_and_descriptor(tmp_
         descriptor=descriptor,
         identity=_identity(provider_id),
         evidence_path=evidence,
-        passed=True,
         operator_confirmed=True,
+        procedure_id="test.fixture.binding",
+        procedure_version="1",
+        checks=_passing_checks(),
     )
 
+    assert record.passed is True
     assert record.implementation_bound is True
     assert record.implementation_id == stored.record.implementation_id
     assert record.implementation_artifact_sha256 == artifact_sha
@@ -293,6 +309,91 @@ def test_hil_recorder_binds_evidence_to_exact_implementation_and_descriptor(tmp_
         implementation_artifact_sha256=artifact_sha,
         hardware_descriptor_sha256=descriptor.fingerprint,
     ) == record
+
+
+def test_hil_recorder_derives_failure_from_checks(tmp_path) -> None:
+    provider_id = "flipper:serial-123"
+    descriptor = _descriptor(provider_id)
+    artifact = tmp_path / "failed-helper.fap"
+    artifact.write_bytes(b"artifact")
+    implementation = CapabilityImplementationRecord(
+        request_id="request-failed-check",
+        capability_id="internal.uart.autodetect",
+        target_id="target-a",
+        backend_id="flipper-fap",
+        provider_id=provider_id,
+        hardware_descriptor_sha256=descriptor.fingerprint,
+        artifact_type="fap",
+        artifact_sha256=hashlib.sha256(artifact.read_bytes()).hexdigest(),
+        action_class=ActionClass.OBSERVE,
+        required_interfaces=("uart",),
+        build_provider_id="ufbt",
+        build_provider_version=None,
+        deployment_provider_id="flipper-storage-loader",
+        evidence_channel_ids=("generated-app-json",),
+    )
+    implementations = LocalCapabilityImplementationStore(tmp_path / "implementations-fail")
+    stored = implementations.save(implementation, artifact_path=artifact)
+    evidence = tmp_path / "failed-evidence.json"
+    evidence.write_text("{}\n", encoding="utf-8")
+
+    record = ImplementationHILRecorder(
+        implementations=implementations,
+        verification=LocalVerificationStore(tmp_path / "verification-fail"),
+    ).record(
+        implementation_id=stored.record.implementation_id,
+        descriptor=descriptor,
+        identity=_identity(provider_id),
+        evidence_path=evidence,
+        operator_confirmed=True,
+        procedure_id="test.fixture.binding",
+        procedure_version="1",
+        checks=(VerificationCheckResult("fixture.expected", False, "mismatch"),),
+    )
+
+    assert record.passed is False
+
+
+def test_hil_recorder_rejects_empty_checks(tmp_path) -> None:
+    provider_id = "flipper:serial-123"
+    descriptor = _descriptor(provider_id)
+    artifact = tmp_path / "empty-check-helper.fap"
+    artifact.write_bytes(b"artifact")
+    implementation = CapabilityImplementationRecord(
+        request_id="request-empty-check",
+        capability_id="internal.uart.autodetect",
+        target_id="target-a",
+        backend_id="flipper-fap",
+        provider_id=provider_id,
+        hardware_descriptor_sha256=descriptor.fingerprint,
+        artifact_type="fap",
+        artifact_sha256=hashlib.sha256(artifact.read_bytes()).hexdigest(),
+        action_class=ActionClass.OBSERVE,
+        required_interfaces=("uart",),
+        build_provider_id="ufbt",
+        build_provider_version=None,
+        deployment_provider_id="flipper-storage-loader",
+        evidence_channel_ids=("generated-app-json",),
+    )
+    implementations = LocalCapabilityImplementationStore(tmp_path / "implementations-empty")
+    stored = implementations.save(implementation, artifact_path=artifact)
+    evidence = tmp_path / "empty-check-evidence.json"
+    evidence.write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="non-empty verification checks"):
+        ImplementationHILRecorder(
+            implementations=implementations,
+            verification=LocalVerificationStore(tmp_path / "verification-empty"),
+        ).record(
+            implementation_id=stored.record.implementation_id,
+            descriptor=descriptor,
+            identity=_identity(provider_id),
+            evidence_path=evidence,
+            operator_confirmed=True,
+            procedure_id="test.fixture.binding",
+            procedure_version="1",
+            checks=(),
+        )
 
 
 def test_hil_recorder_rejects_descriptor_drift(tmp_path) -> None:
@@ -331,6 +432,8 @@ def test_hil_recorder_rejects_descriptor_drift(tmp_path) -> None:
             descriptor=drifted,
             identity=_identity(provider_id),
             evidence_path=evidence,
-            passed=True,
             operator_confirmed=True,
+            procedure_id="test.fixture.binding",
+            procedure_version="1",
+            checks=_passing_checks(),
         )
