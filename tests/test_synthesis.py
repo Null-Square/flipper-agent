@@ -152,7 +152,10 @@ def test_project_writer_creates_external_fap_project_with_hashes(tmp_path: Path)
     assert 'targets=["f7"]' in fam
     assert {path.name for path in project.support_paths} == {"hpa_runtime.c", "hpa_runtime.h"}
     runtime_source = (project.root / "hpa_runtime.c").read_text(encoding="utf-8")
-    assert 'APP_DATA_PATH("result.json")' in runtime_source
+    # Explicit app-data path for the reviewed app_id (no /data alias), matching what the runtime
+    # reads back via generated_result_path.
+    assert '"/ext/apps_data/hpa_gen_gpio_sample/result.json"' in runtime_source
+    assert "storage_common_mkdir" in runtime_source
     assert "HPA_EVIDENCE_MAX_BYTES 4096" in runtime_source
     assert project.source_sha256 == hashlib.sha256(project.source_path.read_bytes()).hexdigest()
     assert project.app_manifest_sha256 == hashlib.sha256(
@@ -161,6 +164,76 @@ def test_project_writer_creates_external_fap_project_with_hashes(tmp_path: Path)
     assert project.synthesis_manifest_sha256 == hashlib.sha256(
         project.synthesis_manifest_path.read_bytes()
     ).hexdigest()
+
+
+# Every file whose bytes are reviewed, hashed, and re-verified before build. These must be
+# byte-identical on disk to the bytes that were hashed, on every platform.
+_INTEGRITY_BOUND_FILES = (
+    "main.c",
+    "hpa_runtime.h",
+    "hpa_runtime.c",
+    "application.fam",
+    "synthesis.json",
+)
+
+
+def _never_run(*args, **kwargs):
+    raise AssertionError("uFBT must not be invoked when project integrity verification fails")
+
+
+def test_generated_project_files_are_lf_only_and_byte_exact(tmp_path: Path) -> None:
+    project = GeneratedProjectWriter(tmp_path / "generated").write(_manifest(), SAFE_GPIO_SOURCE)
+
+    # LF-only on every platform: Path.write_text on Windows would rewrite LF as CRLF and
+    # desynchronize the on-disk bytes from the reviewed/hashed bytes.
+    for name in _INTEGRITY_BOUND_FILES:
+        data = (project.root / name).read_bytes()
+        assert b"\r\n" not in data, f"{name} was written with CRLF line endings"
+        assert b"\r" not in data, f"{name} contains a bare carriage return"
+
+    # Every recorded integrity hash must equal the digest of the exact bytes on disk.
+    recorded = {
+        "main.c": project.source_sha256,
+        "application.fam": project.app_manifest_sha256,
+        "synthesis.json": project.synthesis_manifest_sha256,
+    }
+    for name, digest in recorded.items():
+        on_disk = hashlib.sha256((project.root / name).read_bytes()).hexdigest()
+        assert digest == on_disk, f"recorded hash for {name} does not match bytes on disk"
+
+
+def test_generated_project_hashes_are_deterministic_across_writes(tmp_path: Path) -> None:
+    first = GeneratedProjectWriter(tmp_path / "a").write(_manifest(), SAFE_GPIO_SOURCE)
+    second = GeneratedProjectWriter(tmp_path / "b").write(_manifest(), SAFE_GPIO_SOURCE)
+
+    # Identical inputs produce identical hashes; combined with LF-only bytes this makes the
+    # source-tree hash stable across platforms and repeated runs.
+    assert first.source_sha256 == second.source_sha256
+    assert first.app_manifest_sha256 == second.app_manifest_sha256
+    assert first.source_tree_sha256 == second.source_tree_sha256
+    assert first.synthesis_manifest_sha256 == second.synthesis_manifest_sha256
+
+
+def test_generated_project_writer_does_not_rely_on_text_mode(tmp_path: Path, monkeypatch) -> None:
+    # A regression that reintroduces Path.write_text() must fail here, not silently ship CRLF
+    # artifacts on Windows.
+    def _forbidden(*args, **kwargs):
+        raise AssertionError("GeneratedProjectWriter must write bytes, not text")
+
+    monkeypatch.setattr(Path, "write_text", _forbidden)
+    project = GeneratedProjectWriter(tmp_path / "generated").write(_manifest(), SAFE_GPIO_SOURCE)
+    assert project.source_path.read_bytes().endswith(b"\n")
+
+
+def test_builder_rejects_post_write_mutation_of_every_integrity_bound_file(tmp_path: Path) -> None:
+    for name in _INTEGRITY_BOUND_FILES:
+        project = GeneratedProjectWriter(tmp_path / name.replace(".", "_")).write(
+            _manifest(), SAFE_GPIO_SOURCE
+        )
+        target = project.root / name
+        target.write_bytes(target.read_bytes() + b"\n/* tamper */\n")
+        with pytest.raises(GeneratedAppBuildError):
+            UfbTBuilder(runner=_never_run, timeout_seconds=10).build(project)
 
 
 def test_project_writer_rejects_manifest_string_injection(tmp_path: Path) -> None:

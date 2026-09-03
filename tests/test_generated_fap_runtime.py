@@ -52,6 +52,7 @@ class GeneratedDeviceBackend:
     writes: list[bytes] = field(default_factory=list)
     loader_close_count: int = 0
     auto_exit: bool = True
+    ignore_removes: bool = False
 
 
 class GeneratedFakeSerial:
@@ -80,7 +81,7 @@ class GeneratedFakeSerial:
             assert self._pending_path is not None
             assert len(data) == self._pending_size
             self.backend.files.setdefault(self._pending_path, bytearray()).extend(data)
-            command = f"storage write chunk {self._pending_path} {self._pending_size}"
+            command = f"storage write_chunk {self._pending_path} {self._pending_size}"
             self._pending_path = None
             self._pending_size = None
             self._respond(command, "")
@@ -114,10 +115,11 @@ class GeneratedFakeSerial:
             self._respond(command, "")
         elif command.startswith("storage remove "):
             path = command.removeprefix("storage remove ")
-            self.backend.files.pop(path, None)
+            if not self.backend.ignore_removes:
+                self.backend.files.pop(path, None)
             self._respond(command, "")
-        elif command.startswith("storage write chunk "):
-            remainder = command.removeprefix("storage write chunk ")
+        elif command.startswith("storage write_chunk "):
+            remainder = command.removeprefix("storage write_chunk ")
             path, size_text = remainder.rsplit(" ", 1)
             self._pending_path = path
             self._pending_size = int(size_text)
@@ -276,14 +278,45 @@ def test_generated_execution_deploys_reads_evidence_and_cleans_up(tmp_path: Path
     assert result.raw["generated_app"]["source_tree_sha256"] == artifact.source_tree_sha256
     assert generated_app_path("hpa_gen_gpio_sample") not in backend.files
     assert generated_result_path("hpa_gen_gpio_sample") not in backend.files
+    cleanup = result.raw["cleanup"]
+    assert cleanup == {
+        "attempted": True,
+        "app_removed": True,
+        "result_removed": True,
+        "errors": (),
+    }
     assert b"storage mkdir /ext/apps/NullSquare\r" in backend.writes
     assert any(
         item.startswith(
-            f"storage write chunk {generated_app_path('hpa_gen_gpio_sample')} ".encode()
+            f"storage write_chunk {generated_app_path('hpa_gen_gpio_sample')} ".encode()
         )
         for item in backend.writes
     )
     assert not any(b"/ext/apps/GPIO/" in item for item in backend.writes)
+
+
+def test_cleanup_is_reported_failed_when_device_files_persist(tmp_path: Path) -> None:
+    # The device acknowledges "storage remove" but the files remain. Cleanup must not be inferred
+    # from the absence of an exception: the re-stat has to surface the persistence.
+    backend = GeneratedDeviceBackend(ignore_removes=True)
+    adapter = GeneratedFlipperAdapter(
+        "/dev/fake",
+        manifest=manifest(),
+        artifact=build_artifact(tmp_path),
+        serial_factory=serial_factory(backend),
+    )
+
+    result = adapter.execute(approved_action())
+
+    # The observation itself was read successfully, but cleanup is reported as failed.
+    assert result.status is ExecutionStatus.SUCCESS
+    cleanup = result.raw["cleanup"]
+    assert cleanup["attempted"] is True
+    assert cleanup["app_removed"] is False
+    assert cleanup["result_removed"] is False
+    assert cleanup["errors"]
+    assert any("still present after removal" in message for message in cleanup["errors"])
+    assert any("cleanup reported" in limitation for limitation in result.limitations)
 
 
 def test_generated_runtime_clears_stale_result_before_launch(tmp_path: Path) -> None:
@@ -321,7 +354,7 @@ def test_artifact_tamper_blocks_before_hardware_deployment(tmp_path: Path) -> No
 
     assert result.status is ExecutionStatus.BLOCKED
     assert "hash no longer matches" in (result.error or "")
-    assert not any(item.startswith(b"storage write chunk") for item in backend.writes)
+    assert not any(item.startswith(b"storage write_chunk") for item in backend.writes)
 
 
 def test_generated_runtime_refuses_to_interrupt_other_running_app(tmp_path: Path) -> None:
@@ -337,7 +370,7 @@ def test_generated_runtime_refuses_to_interrupt_other_running_app(tmp_path: Path
 
     assert result.status is ExecutionStatus.FAILED
     assert "while 'NFC' is running" in (result.error or "")
-    assert not any(item.startswith(b"storage write chunk") for item in backend.writes)
+    assert not any(item.startswith(b"storage write_chunk") for item in backend.writes)
 
 
 def test_generated_runtime_timeout_closes_and_removes_generated_app(tmp_path: Path) -> None:

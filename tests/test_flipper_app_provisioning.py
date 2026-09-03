@@ -36,7 +36,7 @@ class ProvisioningFakeSerial:
         if self.pending_chunk_size is not None:
             assert len(data) == self.pending_chunk_size
             self.remote.extend(data)
-            command = self.pending_command or "storage write chunk"
+            command = self.pending_command or "storage write_chunk"
             self.pending_chunk_size = None
             self.pending_command = None
             self._respond(command, "")
@@ -62,7 +62,7 @@ class ProvisioningFakeSerial:
         elif command == f"storage remove {MARAUDER_APP.path}":
             self.remote.clear()
             self._respond(command, "")
-        elif command.startswith(f"storage write chunk {MARAUDER_APP.path} "):
+        elif command.startswith(f"storage write_chunk {MARAUDER_APP.path} "):
             self.pending_chunk_size = int(command.rsplit(" ", 1)[1])
             self.pending_command = command
         elif command == f"storage md5 {MARAUDER_APP.path}":
@@ -112,8 +112,8 @@ def test_pinned_fap_is_written_in_bounded_chunks_and_verified(tmp_path) -> None:
     assert installation.file_md5 == hashlib.md5(payload, usedforsecurity=False).hexdigest()
     assert len(instances) == 1
     writes = instances[0].writes
-    assert f"storage write chunk {MARAUDER_APP.path} 512\r".encode() in writes
-    assert f"storage write chunk {MARAUDER_APP.path} 88\r".encode() in writes
+    assert f"storage write_chunk {MARAUDER_APP.path} 512\r".encode() in writes
+    assert f"storage write_chunk {MARAUDER_APP.path} 88\r".encode() in writes
     assert b"A" * 512 in writes
     assert b"A" * 88 in writes
 

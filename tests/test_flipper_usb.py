@@ -68,3 +68,58 @@ def test_discovery_uses_official_vid_pid_with_flipper_manufacturer() -> None:
     )
 
     assert [candidate.device for candidate in candidates] == ["COM7"]
+
+
+def test_discovery_accepts_windows_inbox_driver_via_flip_serial() -> None:
+    # Real Windows enumeration of a genuine Flipper: usbser.sys reports manufacturer "Microsoft",
+    # but the firmware exposes the "FLIP_"-prefixed CDC serial number alongside the exact VID/PID.
+    candidates = discover_flipper_ports(
+        lambda: [
+            _port(
+                device="COM3",
+                description="USB Serial Device (COM3)",
+                manufacturer="Microsoft",
+                serial_number="FLIP_OY",
+                vid=0x0483,
+                pid=0x5740,
+            )
+        ]
+    )
+
+    assert [candidate.device for candidate in candidates] == ["COM3"]
+    assert candidates[0].serial_number == "FLIP_OY"
+
+
+def test_discovery_rejects_official_cdc_without_flipper_serial() -> None:
+    # Same VID/PID and inbox-driver manufacturer, but no Flipper signal in the serial number.
+    candidates = discover_flipper_ports(
+        lambda: [
+            _port(
+                device="COM4",
+                description="USB Serial Device (COM4)",
+                manufacturer="Microsoft",
+                serial_number="0123456789AB",
+                vid=0x0483,
+                pid=0x5740,
+            )
+        ]
+    )
+
+    assert candidates == []
+
+
+def test_discovery_rejects_flip_serial_on_unrelated_vid_pid() -> None:
+    # A "FLIP_" serial number is not sufficient on its own; the exact VID/PID must also match.
+    candidates = discover_flipper_ports(
+        lambda: [
+            _port(
+                device="COM5",
+                manufacturer="Microsoft",
+                serial_number="FLIP_OY",
+                vid=0x1234,
+                pid=0x5678,
+            )
+        ]
+    )
+
+    assert candidates == []

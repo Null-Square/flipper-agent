@@ -10,7 +10,14 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # One Linux run and one Windows run on the same profile. Windows is a permanent gate because
+    # text-mode file writes rewrite LF as CRLF there, which previously desynchronized integrity
+    # hashes for generated FAP projects and evidence artifacts without failing on Ubuntu.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
