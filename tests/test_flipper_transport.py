@@ -107,6 +107,51 @@ def test_transport_rejects_non_flipper_identity() -> None:
             transport.read_device_info()
 
 
+class ColdStartSerial(FakeSerial):
+    """Presents the CLI prompt only after a carriage-return nudge, like a cold CDC open.
+
+    Models the observed Momentum behavior where the first open after the device has been idle
+    does not surface the prompt within a single sync window until it receives a line ending.
+    """
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._buffer.clear()
+        self._nudged = False
+
+    def write(self, data: bytes) -> int:
+        self.writes.append(data)
+        if data == b"\r" and not self._nudged:
+            self._nudged = True
+            self._buffer.extend(b">: ")
+        elif data == b"info device\r":
+            self._buffer.extend(
+                b"info device\r\n"
+                b"hardware_model: Flipper Zero\r\n"
+                b"hardware_uid: A1B2C3D4\r\n"
+                b"firmware_version: 1.4.3\r\n"
+                b">: "
+            )
+        return len(data)
+
+
+def test_synchronize_prompt_recovers_from_cold_open_with_bounded_retry() -> None:
+    instances: list[ColdStartSerial] = []
+
+    def factory(**kwargs: Any) -> ColdStartSerial:
+        instance = ColdStartSerial(**kwargs)
+        instances.append(instance)
+        return instance
+
+    with FlipperSerialTransport("/dev/cold", serial_factory=factory) as transport:
+        info = transport.read_device_info()
+
+    assert info.model == "Flipper Zero"
+    # Sync nudged with a carriage return before the info-device command was issued.
+    assert instances[0].writes[0] == b"\r"
+    assert b"info device\r" in instances[0].writes
+
+
 def test_transport_times_out_when_prompt_never_arrives() -> None:
     transport = FlipperSerialTransport(
         "/dev/silent",
