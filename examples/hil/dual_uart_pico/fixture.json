@@ -1,0 +1,36 @@
+{
+  "schema_version": "1",
+  "fixture_id": "nullsquare-dual-uart-pico-v1",
+  "board_family": "rp2040-pico",
+  "firmware_family": "micropython",
+  "marker": "NULLSQUARE-HIL-READY",
+  "interval_ms": 100,
+  "usb_cdc": {
+    "purpose": "host.local serial assessment",
+    "marker": "NULLSQUARE-HIL-READY"
+  },
+  "uart": {
+    "controller": 1,
+    "tx_gpio": 4,
+    "rx_gpio": 5,
+    "baud": 115200,
+    "data_bits": 8,
+    "parity": "none",
+    "stop_bits": 1,
+    "minimum_sample_bytes": 32,
+    "purpose": "Flipper internal.uart.autodetect HIL"
+  },
+  "electrical": {
+    "logic_level_volts": 3.3,
+    "target_tx_only": true,
+    "cross_device_power_connection": false,
+    "required_connections": [
+      "Pico GP4 UART1 TX -> prepared Flipper UART RX",
+      "Pico GND -> Flipper GND"
+    ],
+    "forbidden_connections": [
+      "Pico VBUS/VSYS/3V3 -> Flipper power pins",
+      "Flipper TX -> Pico GP5 for this passive fixture"
+    ]
+  }
+}
