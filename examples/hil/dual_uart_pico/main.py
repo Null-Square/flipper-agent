@@ -8,7 +8,7 @@ and Flipper-side UART observation.
 
 import time
 
-from machine import Pin, UART
+from machine import UART, Pin
 
 BANNER = "NULLSQUARE-HIL-READY"
 BAUDRATE = 115200
