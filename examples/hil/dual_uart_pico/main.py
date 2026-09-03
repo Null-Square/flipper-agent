@@ -6,8 +6,9 @@ MicroPython. It emits the same marker over the USB CDC console and UART1 TX
 and Flipper-side UART observation.
 """
 
-from machine import Pin, UART
 import time
+
+from machine import Pin, UART
 
 BANNER = "NULLSQUARE-HIL-READY"
 BAUDRATE = 115200
