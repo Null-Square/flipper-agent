@@ -152,7 +152,10 @@ def test_project_writer_creates_external_fap_project_with_hashes(tmp_path: Path)
     assert 'targets=["f7"]' in fam
     assert {path.name for path in project.support_paths} == {"hpa_runtime.c", "hpa_runtime.h"}
     runtime_source = (project.root / "hpa_runtime.c").read_text(encoding="utf-8")
-    assert 'APP_DATA_PATH("result.json")' in runtime_source
+    # Explicit app-data path for the reviewed app_id (no /data alias), matching what the runtime
+    # reads back via generated_result_path.
+    assert '"/ext/apps_data/hpa_gen_gpio_sample/result.json"' in runtime_source
+    assert "storage_common_mkdir" in runtime_source
     assert "HPA_EVIDENCE_MAX_BYTES 4096" in runtime_source
     assert project.source_sha256 == hashlib.sha256(project.source_path.read_bytes()).hexdigest()
     assert project.app_manifest_sha256 == hashlib.sha256(

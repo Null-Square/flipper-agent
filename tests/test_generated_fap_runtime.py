@@ -81,7 +81,7 @@ class GeneratedFakeSerial:
             assert self._pending_path is not None
             assert len(data) == self._pending_size
             self.backend.files.setdefault(self._pending_path, bytearray()).extend(data)
-            command = f"storage write chunk {self._pending_path} {self._pending_size}"
+            command = f"storage write_chunk {self._pending_path} {self._pending_size}"
             self._pending_path = None
             self._pending_size = None
             self._respond(command, "")
@@ -118,8 +118,8 @@ class GeneratedFakeSerial:
             if not self.backend.ignore_removes:
                 self.backend.files.pop(path, None)
             self._respond(command, "")
-        elif command.startswith("storage write chunk "):
-            remainder = command.removeprefix("storage write chunk ")
+        elif command.startswith("storage write_chunk "):
+            remainder = command.removeprefix("storage write_chunk ")
             path, size_text = remainder.rsplit(" ", 1)
             self._pending_path = path
             self._pending_size = int(size_text)
@@ -288,7 +288,7 @@ def test_generated_execution_deploys_reads_evidence_and_cleans_up(tmp_path: Path
     assert b"storage mkdir /ext/apps/NullSquare\r" in backend.writes
     assert any(
         item.startswith(
-            f"storage write chunk {generated_app_path('hpa_gen_gpio_sample')} ".encode()
+            f"storage write_chunk {generated_app_path('hpa_gen_gpio_sample')} ".encode()
         )
         for item in backend.writes
     )
@@ -354,7 +354,7 @@ def test_artifact_tamper_blocks_before_hardware_deployment(tmp_path: Path) -> No
 
     assert result.status is ExecutionStatus.BLOCKED
     assert "hash no longer matches" in (result.error or "")
-    assert not any(item.startswith(b"storage write chunk") for item in backend.writes)
+    assert not any(item.startswith(b"storage write_chunk") for item in backend.writes)
 
 
 def test_generated_runtime_refuses_to_interrupt_other_running_app(tmp_path: Path) -> None:
@@ -370,7 +370,7 @@ def test_generated_runtime_refuses_to_interrupt_other_running_app(tmp_path: Path
 
     assert result.status is ExecutionStatus.FAILED
     assert "while 'NFC' is running" in (result.error or "")
-    assert not any(item.startswith(b"storage write chunk") for item in backend.writes)
+    assert not any(item.startswith(b"storage write_chunk") for item in backend.writes)
 
 
 def test_generated_runtime_timeout_closes_and_removes_generated_app(tmp_path: Path) -> None:
