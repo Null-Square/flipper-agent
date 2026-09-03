@@ -9,6 +9,7 @@ import pytest
 
 from hardware_pentest.core.hardware import HardwareDescriptor, HardwareIdentity
 from hardware_pentest.core.models import (
+    Action,
     ActionClass,
     CapabilityMaturity,
     ExecutionResult,
@@ -194,6 +195,38 @@ def _runner(tmp_path: Path, implementations, result: ExecutionResult, calls: lis
     return runner, verification
 
 
+def test_default_hil_adapter_validates_persisted_fap_without_mutable_build_tree(
+    tmp_path: Path,
+) -> None:
+    identity, descriptor, implementations, stored = _stored(tmp_path)
+    manifest, artifact = FlipperStoredImplementationCodec.restore(stored)
+    runner = GeneratedImplementationHILRunner(
+        implementations=implementations,
+        verification=LocalVerificationStore(tmp_path / "verification-default"),
+    )
+    adapter = runner.adapter_factory(
+        "COM_TEST",
+        manifest=manifest,
+        artifact=artifact,
+        cleanup=True,
+    )
+
+    validation = adapter.validate(
+        Action(
+            action_id="hil:stored",
+            capability_id=stored.record.capability_id,
+            target_id=stored.record.target_id,
+            action_class=stored.record.action_class,
+            requires_approval=True,
+            requires_human_action=True,
+        )
+    )
+
+    assert identity.instrument_id == descriptor.identity.provider_id
+    assert validation.valid is True
+    assert not (artifact.project_root / "main.c").exists()
+
+
 def test_hil_run_executes_exact_artifact_and_records_runtime_owned_uart_procedure(
     tmp_path: Path,
 ) -> None:
@@ -303,7 +336,8 @@ def test_execution_binding_mismatch_cannot_promote(
     failed_check: str,
 ) -> None:
     identity, descriptor, implementations, stored = _stored(tmp_path)
-    runner, verification = _runner(tmp_path, implementations, result_factory(stored.record.artifact_sha256), [])
+    execution = result_factory(stored.record.artifact_sha256)
+    runner, verification = _runner(tmp_path, implementations, execution, [])
 
     result = runner.run(
         implementation_id=stored.record.implementation_id,
