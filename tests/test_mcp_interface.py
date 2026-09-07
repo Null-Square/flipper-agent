@@ -21,6 +21,7 @@ def _service(tmp_path) -> HardwarePentestService:
         preflight_root=tmp_path / "preflight",
         gate_root=tmp_path / "gates",
         implementation_root=tmp_path / "implementations",
+        surface_root=tmp_path / "target-surfaces",
         generated_project_root=tmp_path / "generated",
     )
 
@@ -40,6 +41,7 @@ def test_mcp_read_only_server_exposes_high_level_context_and_candidates(tmp_path
         "assessment_context",
         "assessment_candidates",
         "assessment_coverage",
+        "target_surface_inventory",
         "implementation_records",
         "verification_records",
         "preflight_records",
@@ -49,6 +51,7 @@ def test_mcp_read_only_server_exposes_high_level_context_and_candidates(tmp_path
     assert "assessment_synthesis_candidate_build" not in names
     assert "assessment_execute_next" not in names
     assert "assessment_recover_interrupted" not in names
+    assert "target_surface_associate_network" not in names
     assert not any("serial" in name for name in names)
     assert not any("raw" in name for name in names)
     assert not any("command" in name for name in names)
@@ -67,6 +70,8 @@ def test_mcp_mutating_tools_require_explicit_server_opt_in(tmp_path) -> None:
     assert "assessment_recover_interrupted" in names
     assert "assessment_candidates" in names
     assert "assessment_coverage" in names
+    assert "target_surface_inventory" in names
+    assert "target_surface_associate_network" in names
     assert "implementation_records" in names
     assert "gate_grant" not in names
     assert "engagement_import" not in names
@@ -81,6 +86,7 @@ def test_mcp_http_defaults_to_loopback_and_stable_port() -> None:
     assert args.port == 8765
     assert args.allow_execution is False
     assert args.implementation_root == ".hardware-pentest/implementations"
+    assert args.surface_root == ".hardware-pentest/target-surfaces"
     assert args.generated_project_root == ".hardware-pentest/generated"
     assert args.ufbt_executable == "ufbt"
     assert args.synthesis_build_timeout_seconds == 120.0
